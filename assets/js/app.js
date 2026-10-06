@@ -1072,25 +1072,28 @@ function getFileIcon(filename, mime) {
   return { icon: 'fa-regular fa-file', color: 'text-slate-600', bg: 'bg-slate-50' };
 }
 
-// --- AIR-GAPPED OPTICAL TRANSFER (QR FILES) ---
-function openQRFilesModal() {
-  const modal = document.getElementById('qr-files-modal');
-  const iframe = document.getElementById('qr-files-iframe');
+// --- P2P OFFLINE TRANSFER (LOCALSEND / XENDER ARCHITECTURE) ---
+function openP2PShareModal() {
+  const modal = document.getElementById('p2p-share-modal') || document.getElementById('qr-files-modal');
+  const iframe = document.getElementById('p2p-share-iframe') || document.getElementById('qr-files-iframe');
   if (modal && iframe) {
     if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('index.html')) {
-      iframe.src = '/dist/index.html#qr';
+      iframe.src = '/dist/index.html#p2p';
     } else {
-      // Trigger hash refresh
-      iframe.contentWindow?.postMessage({ action: 'open_qr' }, '*');
+      iframe.contentWindow?.postMessage({ action: 'open_p2p' }, '*');
     }
     modal.classList.remove('hidden');
   }
 }
 
-function closeQRFilesModal() {
-  const modal = document.getElementById('qr-files-modal');
+function closeP2PShareModal() {
+  const modal = document.getElementById('p2p-share-modal') || document.getElementById('qr-files-modal');
   if (modal) {
     modal.classList.add('hidden');
   }
 }
+
+// Backward compatibility aliases
+const openQRFilesModal = openP2PShareModal;
+const closeQRFilesModal = closeP2PShareModal;
 
