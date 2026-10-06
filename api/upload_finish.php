@@ -68,6 +68,14 @@ if ($accRow) {
     }
 }
 
+// 4. If uploaded file is a video, trigger background multi-resolution transcoding
+$ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+$videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
+if (in_array($ext, $videoExts) || strpos($mimeType, 'video/') === 0) {
+    $workerScript = escapeshellarg(__DIR__ . '/../workers/transcode_worker.php');
+    @exec("php {$workerScript} " . (int)$fileId . " > /dev/null 2>&1 &");
+}
+
 echo json_encode([
     'success' => true,
     'file' => [

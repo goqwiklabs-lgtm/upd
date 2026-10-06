@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw, Copy, Check, Eye, Code } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw, Copy, Check, Eye, Code, Settings, Sliders } from 'lucide-react';
 import type { FileItem } from '../types';
 
 interface Props {
@@ -13,6 +13,11 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [htmlView, setHtmlView] = useState<'preview' | 'code'>('preview');
+
+  const [qualities, setQualities] = useState<{ value: string; label: string; ready: boolean }[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState('auto');
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const ext = file?.name.split('.').pop()?.toLowerCase() || '';
   const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
@@ -33,6 +38,19 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
     setTextContent(null);
     setCopied(false);
     setHtmlView('preview');
+    setSelectedQuality('auto');
+    setShowQualityMenu(false);
+
+    if (file && isVideo) {
+      fetch(`api/files.php?action=video_qualities&file_id=${file.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.qualities) {
+            setQualities(data.qualities);
+          }
+        })
+        .catch(() => {});
+    }
 
     if (file && isCode) {
       fetch(`stream.php?id=${file.id}`)
@@ -40,7 +58,7 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
         .then((text) => setTextContent(text))
         .catch(() => setTextContent('Error loading file preview.'));
     }
-  }, [file, isCode]);
+  }, [file, isCode, isVideo]);
 
   if (!file) return null;
 
@@ -52,6 +70,26 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleQualityChange = (q: string) => {
+    setSelectedQuality(q);
+    setShowQualityMenu(false);
+    if (!videoRef.current || !file) return;
+
+    const video = videoRef.current;
+    const currentTime = video.currentTime;
+    const wasPlaying = !video.paused;
+
+    video.src = `stream.php?id=${file.id}&quality=${encodeURIComponent(q)}`;
+    video.load();
+
+    video.onloadedmetadata = () => {
+      video.currentTime = currentTime;
+      if (wasPlaying) {
+        video.play();
+      }
+    };
   };
 
   return (
@@ -157,16 +195,63 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
       {/* Main Preview Workspace */}
       <div className="flex-1 flex items-center justify-center max-w-6xl w-full mx-auto overflow-hidden p-2">
         {isVideo ? (
-          <div className="w-full max-h-[75vh] flex items-center justify-center bg-black rounded-2xl overflow-hidden shadow-2xl">
-            <video
-              controls
-              autoPlay
-              className="w-full max-h-[75vh] object-contain rounded-2xl"
-              preload="auto"
-            >
-              <source src={streamUrl} type={file.mime_type} />
-              Your browser does not support video playback.
-            </video>
+          <div className="w-full max-w-4xl flex flex-col items-center">
+            <div className="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black group">
+              <video
+                ref={videoRef}
+                controls
+                autoPlay
+                className="w-full max-h-[75vh] object-contain rounded-2xl bg-black"
+                preload="auto"
+              >
+                <source src={`${streamUrl}&quality=${selectedQuality}`} type={file.mime_type} />
+                Your browser does not support video playback.
+              </video>
+
+              {/* YouTube-style Quality Selector */}
+              {qualities.length > 0 && (
+                <div className="absolute top-4 right-4 z-20">
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowQualityMenu(!showQualityMenu)}
+                      className="px-3 py-1.5 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold rounded-xl border border-white/20 transition flex items-center space-x-1.5 shadow-lg"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="capitalize">
+                        {qualities.find((q) => q.value === selectedQuality)?.label || selectedQuality}
+                      </span>
+                    </button>
+
+                    {showQualityMenu && (
+                      <div className="absolute right-0 mt-2 w-44 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl p-1.5 text-xs text-slate-200 z-30">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 px-2 py-1 border-b border-slate-800 flex items-center justify-between">
+                          <span>Resolution</span>
+                          <Sliders className="w-3 h-3 text-slate-400" />
+                        </div>
+                        <div className="mt-1 space-y-0.5 max-h-60 overflow-y-auto">
+                          {qualities.map((q) => (
+                            <button
+                              key={q.value}
+                              type="button"
+                              onClick={() => handleQualityChange(q.value)}
+                              className={`w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg flex items-center justify-between transition ${
+                                selectedQuality === q.value
+                                  ? 'text-blue-400 font-bold bg-blue-500/10'
+                                  : 'text-slate-200'
+                              }`}
+                            >
+                              <span>{q.label}</span>
+                              {selectedQuality === q.value && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : isImage ? (
           <div className="overflow-auto max-h-[75vh] flex items-center justify-center">

@@ -871,13 +871,35 @@ function openFilePreview(fileId) {
 
   if (isVideo) {
     content.innerHTML = `
-      <div class="w-full flex items-center justify-center">
-        <video controls autoplay class="w-full max-h-[75vh] rounded-2xl shadow-2xl bg-black" preload="auto">
-          <source src="${streamUrl}" type="${mime}">
-          Your browser does not support video playback.
-        </video>
+      <div class="w-full max-w-4xl flex flex-col items-center">
+        <div class="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black group">
+          <video id="modal-video-player" controls autoplay class="w-full max-h-[75vh] bg-black" preload="auto">
+            <source src="${streamUrl}&quality=auto" type="${mime}">
+            Your browser does not support video playback.
+          </video>
+
+          <!-- YouTube-style Quality Selector -->
+          <div class="absolute top-4 right-4 z-20">
+            <div class="relative">
+              <button type="button" id="modal-quality-btn" onclick="toggleModalQualityMenu()" class="px-3 py-1.5 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold rounded-xl border border-white/20 transition flex items-center space-x-1.5 shadow-lg">
+                <i class="fa-solid fa-gear text-amber-400"></i>
+                <span id="modal-quality-label">Auto</span>
+              </button>
+              <div id="modal-quality-menu" class="hidden absolute right-0 mt-2 w-40 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl p-1.5 text-xs text-slate-200 z-30">
+                <div class="text-[10px] uppercase font-bold text-slate-400 px-2 py-1 border-b border-slate-800 flex items-center justify-between">
+                  <span>Resolution</span>
+                  <i class="fa-solid fa-sliders"></i>
+                </div>
+                <div id="modal-quality-options" class="mt-1 space-y-0.5 max-h-60 overflow-y-auto">
+                  <div class="p-2 text-center text-slate-500">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     `;
+    loadModalVideoQualities(file.id);
   } else if (isImage) {
     content.innerHTML = `
       <div class="flex items-center justify-center p-4">
@@ -944,6 +966,74 @@ function closePreviewModal() {
   content.innerHTML = '';
   modal.classList.add('hidden');
 }
+
+// --- MODAL VIDEO QUALITY RESOLUTION SWITCHER ---
+let currentModalQuality = 'auto';
+let currentModalVideoFileId = null;
+
+function loadModalVideoQualities(fileId) {
+  currentModalVideoFileId = fileId;
+  currentModalQuality = 'auto';
+  fetch(`api/files.php?action=video_qualities&file_id=${fileId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.qualities) {
+        renderModalQualityOptions(data.qualities);
+      }
+    })
+    .catch(() => {});
+}
+
+function renderModalQualityOptions(qualities) {
+  const container = document.getElementById('modal-quality-options');
+  if (!container) return;
+
+  container.innerHTML = qualities.map(q => `
+    <button type="button" onclick="changeModalQuality('${q.value}', '${q.label}')" class="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg flex items-center justify-between transition ${currentModalQuality === q.value ? 'text-blue-400 font-bold bg-blue-500/10' : 'text-slate-200'}">
+      <span>${q.label}</span>
+      ${currentModalQuality === q.value ? '<i class="fa-solid fa-check text-xs text-blue-400"></i>' : ''}
+    </button>
+  `).join('');
+}
+
+function toggleModalQualityMenu() {
+  const menu = document.getElementById('modal-quality-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+function changeModalQuality(quality, label) {
+  currentModalQuality = quality;
+  const labelEl = document.getElementById('modal-quality-label');
+  if (labelEl) labelEl.textContent = label;
+
+  toggleModalQualityMenu();
+
+  const video = document.getElementById('modal-video-player');
+  if (!video || !currentModalVideoFileId) return;
+
+  const currentTime = video.currentTime;
+  const isPaused = video.paused;
+
+  video.src = `stream.php?id=${currentModalVideoFileId}&quality=${encodeURIComponent(quality)}`;
+  video.load();
+
+  video.onloadedmetadata = () => {
+    video.currentTime = currentTime;
+    if (!isPaused) {
+      video.play();
+    }
+  };
+
+  loadModalVideoQualities(currentModalVideoFileId);
+}
+
+document.addEventListener('click', (e) => {
+  const btn = document.getElementById('modal-quality-btn');
+  const menu = document.getElementById('modal-quality-menu');
+  if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+    menu.classList.add('hidden');
+  }
+});
 
 // --- HELPER FUNCTIONS ---
 function formatBytes(bytes) {

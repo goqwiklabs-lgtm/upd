@@ -2,18 +2,75 @@
 session_start();
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/google.php';
+require_once __DIR__ . '/../services/VideoTranscoder.php';
+
+$pdo = getDBConnection();
+$action = $_GET['action'] ?? $_POST['action'] ?? 'list';
+
+// Fetch available video resolutions (YouTube style)
+if ($action === 'video_qualities') {
+    $fileId = isset($_GET['file_id']) ? (int)$_GET['file_id'] : 0;
+    $token = trim($_GET['token'] ?? '');
+
+    $file = null;
+    if (!empty($token)) {
+        $stmt = $pdo->prepare("SELECT * FROM files WHERE share_token = ?");
+        $stmt->execute([$token]);
+        $file = $stmt->fetch();
+    } elseif ($fileId > 0 && isset($_SESSION['user_id'])) {
+        $stmt = $pdo->prepare("SELECT * FROM files WHERE id = ?");
+        $stmt->execute([$fileId]);
+        $file = $stmt->fetch();
+    }
+
+    if (!$file) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'File not found.']);
+        exit;
+    }
+
+    $height = (int)($file['video_height'] ?? 0);
+    if ($height <= 0) {
+        $height = 1080;
+    }
+
+    $qualities = VideoTranscoder::getAvailableQualities($height);
+    $list = [
+        ['value' => 'auto', 'label' => 'Auto', 'ready' => true],
+        ['value' => 'original', 'label' => 'Original', 'ready' => true],
+    ];
+
+    foreach ($qualities as $q) {
+        $isReady = VideoTranscoder::hasTranscoded((int)$file['id'], $q);
+        $label = $q;
+        if ($q === '4k') $label = '4K (2160p)';
+        elseif ($q === '1440p') $label = '2K (1440p)';
+        elseif ($q === '1080p') $label = '1080p (HD)';
+
+        $list[] = [
+            'value' => $q,
+            'label' => $label,
+            'ready' => $isReady,
+        ];
+    }
+
+    echo json_encode([
+        'success' => true,
+        'qualities' => $list,
+        'current' => 'auto',
+    ]);
+    exit;
+}
+
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Unauthorized.']);
     exit;
 }
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../config/google.php';
-
-$pdo = getDBConnection();
 $userId = (int)$_SESSION['user_id'];
-$action = $_GET['action'] ?? $_POST['action'] ?? 'list';
 
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true) ?: $_POST;

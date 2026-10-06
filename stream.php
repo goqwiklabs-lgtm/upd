@@ -3,12 +3,14 @@ session_start();
 
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/google.php';
+require_once __DIR__ . '/services/VideoTranscoder.php';
 
 $pdo = getDBConnection();
 
 $fileId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $token = trim($_GET['token'] ?? '');
 $download = !empty($_GET['download']);
+$quality = trim($_GET['quality'] ?? '');
 
 $file = null;
 
@@ -39,6 +41,36 @@ if (!$file) {
 
 // Release session lock immediately so parallel range requests never block
 session_write_close();
+
+$mimeType = $file['mime_type'] ?: 'application/octet-stream';
+$ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+$videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
+$isVideo = in_array($ext, $videoExts) || strpos($mimeType, 'video/') === 0;
+
+// Multi-Resolution Video Stream Handler
+if ($isVideo && !$download && !empty($quality) && $quality !== 'original') {
+    $targetFileId = (int)$file['id'];
+
+    if (VideoTranscoder::hasTranscoded($targetFileId, $quality)) {
+        VideoTranscoder::serveLocalFile(
+            VideoTranscoder::getTranscodedPath($targetFileId, $quality),
+            'video/mp4',
+            false,
+            $file['name']
+        );
+        exit;
+    }
+
+    // Generate on demand if requested quality is not ready yet
+    $origPath = VideoTranscoder::ensureOriginalDownloaded($file, $pdo);
+    if ($origPath) {
+        $transPath = VideoTranscoder::transcode($origPath, $targetFileId, $quality);
+        if ($transPath) {
+            VideoTranscoder::serveLocalFile($transPath, 'video/mp4', false, $file['name']);
+            exit;
+        }
+    }
+}
 
 // Get valid Google access token
 $accessToken = GoogleDriveManager::getValidAccessToken($file, $pdo);
