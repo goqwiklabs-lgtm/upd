@@ -33,6 +33,9 @@ export interface GoogleAccount {
   client_id: string;
   used_storage_bytes: number;
   storage_limit_bytes: number;
+  total_capacity_bytes?: number;
+  initial_used_bytes?: number;
+  drive_folder_id?: string;
   is_active: number;
   created_at: string;
   files_count?: number;

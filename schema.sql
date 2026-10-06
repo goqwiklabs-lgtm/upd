@@ -19,8 +19,11 @@ CREATE TABLE IF NOT EXISTS `google_accounts` (
   `access_token` TEXT NULL,
   `token_expires_at` INT DEFAULT 0,
   `used_storage_bytes` BIGINT DEFAULT 0,
-  -- 13 GB limit = 13 * 1024 * 1024 * 1024 bytes = 13958643712 bytes (leaves 2GB buffer)
+  -- Dynamic limit calculated as: (Total Google Drive Capacity - User Previous Usage - 2GB Safety Buffer)
   `storage_limit_bytes` BIGINT DEFAULT 13958643712,
+  `total_capacity_bytes` BIGINT DEFAULT 16106127360,
+  `initial_used_bytes` BIGINT DEFAULT 0,
+  `drive_folder_id` VARCHAR(255) NULL,
   `is_active` TINYINT(1) DEFAULT 1,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

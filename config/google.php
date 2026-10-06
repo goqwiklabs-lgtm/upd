@@ -80,8 +80,67 @@ class GoogleDriveManager {
     }
 
     /**
+     * Gets or creates the dedicated "CloudDrive_files" folder in Google Drive
+     */
+    public static function getOrCreateCloudDriveFolder(array $account, PDO $pdo): ?string {
+        if (!empty($account['drive_folder_id'])) {
+            return $account['drive_folder_id'];
+        }
+
+        $accessToken = self::getValidAccessToken($account, $pdo);
+        if (!$accessToken) return null;
+
+        // 1. Search for existing folder
+        $q = "name = 'CloudDrive_files' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+        $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken],
+            CURLOPT_TIMEOUT => 15,
+        ]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        $searchData = json_decode($res, true);
+
+        if (!empty($searchData['files'][0]['id'])) {
+            $folderId = $searchData['files'][0]['id'];
+            $pdo->prepare("UPDATE google_accounts SET drive_folder_id = ? WHERE id = ?")->execute([$folderId, $account['id']]);
+            return $folderId;
+        }
+
+        // 2. Create folder if not found
+        $ch = curl_init("https://www.googleapis.com/drive/v3/files");
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode([
+                'name' => 'CloudDrive_files',
+                'mimeType' => 'application/vnd.google-apps.folder',
+            ]),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $accessToken,
+                'Content-Type: application/json; charset=UTF-8',
+            ],
+            CURLOPT_TIMEOUT => 15,
+        ]);
+        $createRes = curl_exec($ch);
+        curl_close($ch);
+        $createData = json_decode($createRes, true);
+
+        if (!empty($createData['id'])) {
+            $folderId = $createData['id'];
+            $pdo->prepare("UPDATE google_accounts SET drive_folder_id = ? WHERE id = ?")->execute([$folderId, $account['id']]);
+            return $folderId;
+        }
+
+        return null;
+    }
+
+    /**
      * Initiates a Google Drive Resumable Upload Session.
-     * Returns the direct Google Resumable Upload Session URI for client-side streaming.
+     * All files are stored directly inside the "CloudDrive_files" folder!
      */
     public static function createResumableUploadSession(array $account, PDO $pdo, string $filename, string $mimeType, int $fileSize, string $clientOrigin = ''): ?string {
         $accessToken = self::getValidAccessToken($account, $pdo);
@@ -89,11 +148,17 @@ class GoogleDriveManager {
             return null;
         }
 
+        $folderId = self::getOrCreateCloudDriveFolder($account, $pdo);
+
         $url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
-        $metadata = json_encode([
+        $meta = [
             'name' => $filename,
             'mimeType' => $mimeType ?: 'application/octet-stream',
-        ]);
+        ];
+        if (!empty($folderId)) {
+            $meta['parents'] = [$folderId];
+        }
+        $metadata = json_encode($meta);
 
         $headers = [
             'Authorization: Bearer ' . $accessToken,
@@ -247,10 +312,14 @@ class GoogleDriveManager {
 
     /**
      * Sync and fetch actual Google Drive used storage quota directly from Google API
+     * Auto-detects total storage, user's previous usage, and reserves a 2 GB safety buffer!
      */
-    public static function syncGoogleDriveQuota(array $account, PDO $pdo): ?int {
+    public static function syncGoogleDriveQuota(array $account, PDO $pdo): ?array {
         $accessToken = self::getValidAccessToken($account, $pdo);
         if (!$accessToken) return null;
+
+        // Ensure "CloudDrive_files" folder exists in this account
+        self::getOrCreateCloudDriveFolder($account, $pdo);
 
         $url = "https://www.googleapis.com/drive/v3/about?fields=storageQuota,user";
         $ch = curl_init($url);
@@ -266,12 +335,36 @@ class GoogleDriveManager {
 
         if ($httpCode === 200) {
             $data = json_decode($response, true);
-            $usage = (int)($data['storageQuota']['usageInDrive'] ?? $data['storageQuota']['usage'] ?? 0);
             
+            // 1. Total capacity (Google limit: e.g. 15 GB, 2 TB, or 5 TB)
+            $totalCapacity = (int)($data['storageQuota']['limit'] ?? (5 * 1024 * 1024 * 1024 * 1024)); // Default 5TB if unlimited
+            if ($totalCapacity <= 0) {
+                $totalCapacity = 15 * 1024 * 1024 * 1024;
+            }
+
+            // 2. Current total used in account by user
+            $currentUsed = (int)($data['storageQuota']['usage'] ?? 0);
+
+            // 3. Subtract 2 GB safety buffer for personal emails/files
+            $twoGb = 2 * 1024 * 1024 * 1024;
+            $remaining = max(0, $totalCapacity - $currentUsed);
+            $systemAllowedQuota = max(0, $remaining - $twoGb);
+
             // Update in DB
-            $stmt = $pdo->prepare("UPDATE google_accounts SET used_storage_bytes = ? WHERE id = ?");
-            $stmt->execute([$usage, $account['id']]);
-            return $usage;
+            $stmt = $pdo->prepare("
+                UPDATE google_accounts 
+                SET total_capacity_bytes = ?, 
+                    initial_used_bytes = ?, 
+                    storage_limit_bytes = ? 
+                WHERE id = ?
+            ");
+            $stmt->execute([$totalCapacity, $currentUsed, $systemAllowedQuota, $account['id']]);
+
+            return [
+                'total_capacity_bytes' => $totalCapacity,
+                'initial_used_bytes' => $currentUsed,
+                'storage_limit_bytes' => $systemAllowedQuota,
+            ];
         }
 
         return null;

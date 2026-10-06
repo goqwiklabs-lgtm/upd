@@ -41,7 +41,8 @@ if ($action === 'stats') {
 // 2. LIST GOOGLE ACCOUNTS
 if ($action === 'accounts_list') {
     $stmt = $pdo->query("
-        SELECT g.id, g.account_email, g.client_id, g.used_storage_bytes, g.storage_limit_bytes, g.is_active, g.created_at,
+        SELECT g.id, g.account_email, g.client_id, g.used_storage_bytes, g.storage_limit_bytes, 
+               g.total_capacity_bytes, g.initial_used_bytes, g.drive_folder_id, g.is_active, g.created_at,
                COUNT(f.id) as files_count
         FROM google_accounts g
         LEFT JOIN files f ON f.google_account_id = g.id
@@ -117,7 +118,7 @@ if ($action === 'account_add_key') {
             $email = $decoded['client_email'] ?? '';
             $clientId = $decoded['client_id'] ?? 'service_account';
             $clientSecret = 'service_account';
-            $refreshToken = $keyInput; // store full json
+            $refreshToken = $keyInput;
         }
     } else {
         // String format: check delimiter '|' or raw token
@@ -142,7 +143,7 @@ if ($action === 'account_add_key') {
         http_response_code(400);
         echo json_encode([
             'success' => false,
-            'error' => 'Google Client ID and Client Secret are not configured yet. Please enter them once under "OAuth Setup" or paste the full credentials JSON.'
+            'error' => 'Google Client ID and Client Secret are not configured yet. Please enter them once under "Master Client ID & Secret" or paste the full credentials JSON.'
         ]);
         exit;
     }
@@ -184,32 +185,42 @@ if ($action === 'account_add_key') {
     $aboutData = json_decode($aboutRes, true);
 
     $detectedEmail = $aboutData['user']['emailAddress'] ?? $email;
-    $usage = (int)($aboutData['storageQuota']['usageInDrive'] ?? $aboutData['storageQuota']['usage'] ?? 0);
-
     if (empty($detectedEmail)) {
         $detectedEmail = 'storage_' . time() . '@gmail.com';
     }
 
-    // Default limit: 13 GB (13,958,643,712 bytes)
-    $limitBytes = 13 * 1024 * 1024 * 1024;
+    // 1. Total storage capacity (e.g. 15 GB, 2 TB, or 5 TB)
+    $totalCapacity = (int)($aboutData['storageQuota']['limit'] ?? (5 * 1024 * 1024 * 1024 * 1024));
+    if ($totalCapacity <= 0) $totalCapacity = 15 * 1024 * 1024 * 1024;
+
+    // 2. Previous storage already used by account owner
+    $currentUsed = (int)($aboutData['storageQuota']['usage'] ?? 0);
+
+    // 3. Subtract 2 GB safety buffer for personal emails/files
+    $twoGb = 2 * 1024 * 1024 * 1024;
+    $remaining = max(0, $totalCapacity - $currentUsed);
+    $systemAllowedLimit = max(0, $remaining - $twoGb);
 
     // Check if account already exists
-    $existing = $pdo->prepare("SELECT id FROM google_accounts WHERE account_email = ?");
+    $existing = $pdo->prepare("SELECT id, drive_folder_id FROM google_accounts WHERE account_email = ?");
     $existing->execute([$detectedEmail]);
     $accRow = $existing->fetch();
 
     if ($accRow) {
         $upd = $pdo->prepare("
             UPDATE google_accounts 
-            SET client_id = ?, client_secret = ?, refresh_token = ?, access_token = ?, token_expires_at = ?, used_storage_bytes = ?, is_active = 1
+            SET client_id = ?, client_secret = ?, refresh_token = ?, access_token = ?, token_expires_at = ?,
+                total_capacity_bytes = ?, initial_used_bytes = ?, storage_limit_bytes = ?, is_active = 1
             WHERE id = ?
         ");
-        $upd->execute([$clientId, $clientSecret, $refreshToken, $accessToken, time() + 3500, $usage, $accRow['id']]);
+        $upd->execute([$clientId, $clientSecret, $refreshToken, $accessToken, time() + 3500, $totalCapacity, $currentUsed, $systemAllowedLimit, $accRow['id']]);
         $newId = $accRow['id'];
+        $tempAccount['id'] = $newId;
+        $tempAccount['drive_folder_id'] = $accRow['drive_folder_id'];
     } else {
         $ins = $pdo->prepare("
-            INSERT INTO google_accounts (account_email, client_id, client_secret, refresh_token, access_token, token_expires_at, used_storage_bytes, storage_limit_bytes, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO google_accounts (account_email, client_id, client_secret, refresh_token, access_token, token_expires_at, used_storage_bytes, storage_limit_bytes, total_capacity_bytes, initial_used_bytes, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1)
         ");
         $ins->execute([
             $detectedEmail,
@@ -218,17 +229,25 @@ if ($action === 'account_add_key') {
             $refreshToken,
             $accessToken,
             time() + 3500,
-            $usage,
-            $limitBytes
+            $systemAllowedLimit,
+            $totalCapacity,
+            $currentUsed,
         ]);
         $newId = $pdo->lastInsertId();
+        $tempAccount['id'] = $newId;
     }
+
+    // Automatically create / find "CloudDrive_files" folder in Google Drive
+    $folderId = GoogleDriveManager::getOrCreateCloudDriveFolder($tempAccount, $pdo);
 
     echo json_encode([
         'success' => true,
         'account_id' => $newId,
         'account_email' => $detectedEmail,
-        'used_storage_bytes' => $usage,
+        'total_capacity_bytes' => $totalCapacity,
+        'initial_used_bytes' => $currentUsed,
+        'storage_limit_bytes' => $systemAllowedLimit,
+        'drive_folder_id' => $folderId,
     ]);
     exit;
 }
@@ -265,12 +284,9 @@ if ($action === 'account_add') {
         exit;
     }
 
-    // Default limit: 13 GB (13958643712 bytes)
-    $limitBytes = 13 * 1024 * 1024 * 1024;
-
     $stmt = $pdo->prepare("
         INSERT INTO google_accounts (account_email, client_id, client_secret, refresh_token, access_token, token_expires_at, used_storage_bytes, storage_limit_bytes, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 13958643712, 1)
     ");
     $stmt->execute([
         $email,
@@ -279,16 +295,23 @@ if ($action === 'account_add') {
         $refreshToken,
         $accessToken,
         time() + 3500,
-        $limitBytes
     ]);
     $newId = $pdo->lastInsertId();
 
     $tempAccount['id'] = $newId;
     $tempAccount['access_token'] = $accessToken;
     $tempAccount['token_expires_at'] = time() + 3500;
-    GoogleDriveManager::syncGoogleDriveQuota($tempAccount, $pdo);
+    
+    // Automatically calculate dynamic storage and create CloudDrive_files folder
+    $quotaData = GoogleDriveManager::syncGoogleDriveQuota($tempAccount, $pdo);
+    $folderId = GoogleDriveManager::getOrCreateCloudDriveFolder($tempAccount, $pdo);
 
-    echo json_encode(['success' => true, 'account_id' => $newId]);
+    echo json_encode([
+        'success' => true, 
+        'account_id' => $newId,
+        'quota' => $quotaData,
+        'drive_folder_id' => $folderId
+    ]);
     exit;
 }
 
@@ -317,8 +340,8 @@ if ($action === 'account_sync') {
         exit;
     }
 
-    $usage = GoogleDriveManager::syncGoogleDriveQuota($acc, $pdo);
-    echo json_encode(['success' => true, 'used_storage_bytes' => $usage]);
+    $quota = GoogleDriveManager::syncGoogleDriveQuota($acc, $pdo);
+    echo json_encode(['success' => true, 'quota' => $quota]);
     exit;
 }
 

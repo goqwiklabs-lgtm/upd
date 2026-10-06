@@ -130,7 +130,7 @@ $adminEmail = $_SESSION['email'] ?? '';
           <i class="fa-solid fa-envelope text-blue-500 text-lg"></i>
         </div>
         <div class="text-2xl font-bold text-slate-800" id="stat-accounts">0</div>
-        <div class="text-[11px] text-slate-400 mt-1">13 GB pool limit per account</div>
+        <div class="text-[11px] text-slate-400 mt-1">Multi-account pooled storage</div>
       </div>
 
       <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
@@ -200,7 +200,7 @@ $adminEmail = $_SESSION['email'] ?? '';
           </button>
         </div>
         <p class="text-[11px] text-blue-200/70">
-          💡 The system automatically verifies with Google Drive API, reads the Gmail email address, sets the <strong>13 GB limit</strong>, and adds it to the storage pool.
+          💡 The system automatically detects total Google Drive capacity (15 GB, 2 TB, 5 TB), deducts previous user usage, reserves a <strong>2 GB safety buffer</strong>, and automatically creates a dedicated <strong>CloudDrive_files</strong> folder!
         </p>
       </div>
     </section>
@@ -209,7 +209,7 @@ $adminEmail = $_SESSION['email'] ?? '';
     <div class="flex border-b border-slate-200 space-x-6 text-sm font-semibold">
       <button onclick="switchTab('accounts')" id="tab-btn-accounts" class="pb-3 border-b-2 border-blue-600 text-blue-600 transition flex items-center space-x-2">
         <i class="fa-solid fa-cloud"></i>
-        <span>Connected Gmail Pool (13 GB Limit)</span>
+        <span>Connected Gmail Storage Pool</span>
       </button>
       <button onclick="switchTab('files')" id="tab-btn-files" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center space-x-2">
         <i class="fa-solid fa-folder-tree"></i>
@@ -298,16 +298,25 @@ $adminEmail = $_SESSION['email'] ?? '';
       if (tab === 'users') loadUsers();
     }
 
+    function formatBytes(bytes, decimals = 2) {
+      if (!bytes || bytes <= 0) return '0 B';
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
     async function loadStats() {
       const res = await fetch('../api/admin.php?action=stats');
       const data = await res.json();
       if (data.success) {
         const s = data.stats;
         document.getElementById('stat-accounts').textContent = s.active_google_accounts;
-        const usedGb = (s.pool_used_bytes / (1024 * 1024 * 1024)).toFixed(2);
-        const totalGb = (s.pool_total_bytes / (1024 * 1024 * 1024)).toFixed(1);
-        document.getElementById('stat-storage-used').textContent = `${usedGb} GB`;
-        document.getElementById('stat-storage-total').textContent = `of ${totalGb} GB pool capacity`;
+        const usedStr = formatBytes(s.pool_used_bytes);
+        const totalStr = formatBytes(s.pool_total_bytes);
+        document.getElementById('stat-storage-used').textContent = usedStr;
+        document.getElementById('stat-storage-total').textContent = `of ${totalStr} pool capacity`;
         document.getElementById('stat-files').textContent = s.total_files;
         document.getElementById('stat-users').textContent = s.total_users;
       }
@@ -328,15 +337,18 @@ $adminEmail = $_SESSION['email'] ?? '';
             <div class="col-span-full py-12 text-center text-slate-400 bg-white border border-slate-200 rounded-3xl">
               <i class="fa-solid fa-cloud text-4xl text-blue-400 mb-3"></i>
               <h3 class="font-bold text-slate-700">No Google Accounts Connected Yet</h3>
-              <p class="text-xs text-slate-400 mt-1">Paste your Google Drive Key or Refresh Token above to connect your first 13 GB storage pool account.</p>
+              <p class="text-xs text-slate-400 mt-1">Paste your Google Drive Key or Refresh Token above to connect your first storage pool account.</p>
             </div>
           `;
           return;
         }
 
         grid.innerHTML = accounts.map(acc => {
-          const usedGb = (acc.used_storage_bytes / (1024 * 1024 * 1024)).toFixed(2);
-          const percent = Math.min(100, Math.round((acc.used_storage_bytes / acc.storage_limit_bytes) * 100));
+          const usedBytes = acc.used_storage_bytes || 0;
+          const limitBytes = acc.storage_limit_bytes || (13 * 1024 * 1024 * 1024);
+          const totalCapacity = acc.total_capacity_bytes || (15 * 1024 * 1024 * 1024);
+          const ownerUsed = acc.initial_used_bytes || 0;
+          const percent = Math.min(100, Math.round((usedBytes / limitBytes) * 100));
           const isFull = percent >= 100;
           return `
             <div class="bg-white border ${isFull ? 'border-amber-300' : 'border-slate-200'} rounded-2xl p-5 shadow-xs space-y-4">
@@ -349,12 +361,12 @@ $adminEmail = $_SESSION['email'] ?? '';
                     <h3 class="font-bold text-sm text-slate-800 truncate max-w-[170px]" title="${acc.account_email}">${acc.account_email}</h3>
                     <div class="flex items-center space-x-1.5 text-[11px] text-slate-400">
                       <span class="w-2 h-2 rounded-full ${acc.is_active ? (isFull ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-slate-300'}"></span>
-                      <span>${acc.is_active ? (isFull ? '13 GB Cap Reached' : 'Active') : 'Disabled'}</span>
+                      <span>${acc.is_active ? (isFull ? 'Storage Cap Reached' : 'Active') : 'Disabled'}</span>
                     </div>
                   </div>
                 </div>
                 <div class="flex items-center space-x-1 text-slate-400">
-                  <button onclick="syncQuota(${acc.id})" title="Sync quota with Google" class="p-1.5 hover:text-blue-600 rounded-lg transition">
+                  <button onclick="syncQuota(${acc.id})" title="Sync live quota with Google" class="p-1.5 hover:text-blue-600 rounded-lg transition">
                     <i class="fa-solid fa-rotate"></i>
                   </button>
                   <button onclick="deleteAccount(${acc.id})" title="Disconnect" class="p-1.5 hover:text-red-500 rounded-lg transition">
@@ -363,18 +375,47 @@ $adminEmail = $_SESSION['email'] ?? '';
                 </div>
               </div>
 
-              <!-- 13 GB Progress Meter -->
+              <!-- Folder Badge -->
+              <div class="flex items-center justify-between text-[11px] bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                <span class="text-slate-500 font-medium flex items-center space-x-1.5">
+                  <i class="fa-solid fa-folder text-amber-500"></i>
+                  <span>Target Folder:</span>
+                </span>
+                <span class="font-mono font-bold text-blue-600">CloudDrive_files</span>
+              </div>
+
+              <!-- Dynamic Quota Breakdown Grid -->
+              <div class="grid grid-cols-2 gap-2 text-[10px] bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                <div>
+                  <span class="text-slate-400 block">Total Drive Space</span>
+                  <strong class="text-slate-700 text-[11px]">${formatBytes(totalCapacity)}</strong>
+                </div>
+                <div>
+                  <span class="text-slate-400 block">Owner Prior Used</span>
+                  <strong class="text-slate-700 text-[11px]">${formatBytes(ownerUsed)}</strong>
+                </div>
+                <div>
+                  <span class="text-slate-400 block">Safety Reserved</span>
+                  <strong class="text-emerald-600 text-[11px]">2 GB Buffer</strong>
+                </div>
+                <div>
+                  <span class="text-slate-400 block">CloudDrive Quota</span>
+                  <strong class="text-blue-600 text-[11px]">${formatBytes(limitBytes)}</strong>
+                </div>
+              </div>
+
+              <!-- Progress Meter -->
               <div class="space-y-1.5">
                 <div class="flex items-center justify-between text-xs">
-                  <span class="text-slate-500">Storage Used</span>
-                  <span class="font-semibold text-slate-800">${usedGb} GB / 13 GB (${percent}%)</span>
+                  <span class="text-slate-500">CloudDrive Used</span>
+                  <span class="font-semibold text-slate-800">${formatBytes(usedBytes)} / ${formatBytes(limitBytes)} (${percent}%)</span>
                 </div>
                 <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                   <div class="h-2 rounded-full transition-all duration-300 ${percent > 90 ? 'bg-amber-500' : 'bg-blue-600'}" style="width: ${percent}%"></div>
                 </div>
                 <div class="flex items-center justify-between text-[10px] text-slate-400">
-                  <span>${acc.files_count} files stored</span>
-                  <span>2 GB safety buffer reserved</span>
+                  <span>${acc.files_count || 0} files stored</span>
+                  <span>Auto-rollover ready</span>
                 </div>
               </div>
 
@@ -414,7 +455,7 @@ $adminEmail = $_SESSION['email'] ?? '';
         const data = await res.json();
         if (data.success) {
           fb.className = 'p-3 rounded-xl text-xs bg-emerald-500/20 text-emerald-200 border border-emerald-500/30';
-          fb.innerHTML = `✓ Successfully connected <strong>${data.account_email}</strong> to the 13 GB storage pool!`;
+          fb.innerHTML = `✓ Successfully connected <strong>${data.account_email}</strong>! Allocated <strong>${formatBytes(data.storage_limit_bytes)}</strong> (Total: ${formatBytes(data.total_capacity_bytes)}, 2 GB Safety Buffer Reserved, Target Folder: CloudDrive_files)`;
           fb.classList.remove('hidden');
           document.getElementById('quick-key-input').value = '';
           loadStats();

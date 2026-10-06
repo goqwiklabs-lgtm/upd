@@ -25,6 +25,15 @@ function switchAdminTab(tab) {
   if (tab === 'users') loadUsersList();
 }
 
+function formatBytes(bytes, decimals = 2) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
 async function loadAdminStats() {
   try {
     const res = await fetch('api/admin.php?action=stats');
@@ -38,10 +47,10 @@ async function loadAdminStats() {
       const s = data.stats;
       document.getElementById('stat-accounts').textContent = s.active_google_accounts;
       
-      const usedGb = (s.pool_used_bytes / (1024 * 1024 * 1024)).toFixed(2);
-      const totalGb = (s.pool_total_bytes / (1024 * 1024 * 1024)).toFixed(1);
-      document.getElementById('stat-storage-used').textContent = `${usedGb} GB`;
-      document.getElementById('stat-storage-total').textContent = `of ${totalGb} GB pool capacity`;
+      const usedStr = formatBytes(s.pool_used_bytes);
+      const totalStr = formatBytes(s.pool_total_bytes);
+      document.getElementById('stat-storage-used').textContent = usedStr;
+      document.getElementById('stat-storage-total').textContent = `of ${totalStr} pool capacity`;
 
       document.getElementById('stat-files').textContent = s.total_files;
       document.getElementById('stat-users').textContent = s.total_users;
@@ -75,9 +84,11 @@ async function loadGoogleAccounts() {
       }
 
       grid.innerHTML = accounts.map(acc => {
-        const usedGb = (acc.used_storage_bytes / (1024 * 1024 * 1024)).toFixed(2);
-        const limitGb = (acc.storage_limit_bytes / (1024 * 1024 * 1024)).toFixed(0);
-        const percent = Math.min(100, Math.round((acc.used_storage_bytes / acc.storage_limit_bytes) * 100));
+        const usedBytes = acc.used_storage_bytes || 0;
+        const limitBytes = acc.storage_limit_bytes || (13 * 1024 * 1024 * 1024);
+        const totalCapacity = acc.total_capacity_bytes || (15 * 1024 * 1024 * 1024);
+        const ownerUsed = acc.initial_used_bytes || 0;
+        const percent = Math.min(100, Math.round((usedBytes / limitBytes) * 100));
         const isFull = percent >= 100;
 
         return `
@@ -91,7 +102,7 @@ async function loadGoogleAccounts() {
                   <h3 class="font-bold text-sm text-slate-800 truncate max-w-[170px]" title="${escapeHtml(acc.account_email)}">${escapeHtml(acc.account_email)}</h3>
                   <div class="flex items-center space-x-1.5 text-[11px] text-slate-400">
                     <span class="w-2 h-2 rounded-full ${acc.is_active ? (isFull ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-slate-300'}"></span>
-                    <span>${acc.is_active ? (isFull ? 'Storage Full (13 GB Limit)' : 'Active') : 'Disabled'}</span>
+                    <span>${acc.is_active ? (isFull ? 'Storage Cap Reached' : 'Active') : 'Disabled'}</span>
                   </div>
                 </div>
               </div>
@@ -105,18 +116,47 @@ async function loadGoogleAccounts() {
               </div>
             </div>
 
-            <!-- Storage Progress Meter (Towards 13 GB) -->
+            <!-- Target Folder Badge -->
+            <div class="flex items-center justify-between text-[11px] bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+              <span class="text-slate-500 font-medium flex items-center space-x-1.5">
+                <i class="fa-solid fa-folder text-amber-500"></i>
+                <span>Target Folder:</span>
+              </span>
+              <span class="font-mono font-bold text-blue-600">CloudDrive_files</span>
+            </div>
+
+            <!-- Dynamic Quota Breakdown Grid -->
+            <div class="grid grid-cols-2 gap-2 text-[10px] bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+              <div>
+                <span class="text-slate-400 block">Total Drive Space</span>
+                <strong class="text-slate-700 text-[11px]">${formatBytes(totalCapacity)}</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block">Owner Prior Used</span>
+                <strong class="text-slate-700 text-[11px]">${formatBytes(ownerUsed)}</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block">Safety Reserved</span>
+                <strong class="text-emerald-600 text-[11px]">2 GB Buffer</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block">CloudDrive Quota</span>
+                <strong class="text-blue-600 text-[11px]">${formatBytes(limitBytes)}</strong>
+              </div>
+            </div>
+
+            <!-- Storage Progress Meter -->
             <div class="space-y-1.5">
               <div class="flex items-center justify-between text-xs">
-                <span class="text-slate-500">Storage Used</span>
-                <span class="font-semibold text-slate-800">${usedGb} GB / ${limitGb} GB (${percent}%)</span>
+                <span class="text-slate-500">CloudDrive Used</span>
+                <span class="font-semibold text-slate-800">${formatBytes(usedBytes)} / ${formatBytes(limitBytes)} (${percent}%)</span>
               </div>
               <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                 <div class="h-2 rounded-full transition-all duration-300 ${percent > 90 ? 'bg-amber-500' : 'bg-blue-600'}" style="width: ${percent}%"></div>
               </div>
               <div class="flex items-center justify-between text-[10px] text-slate-400">
-                <span>${acc.files_count} files stored</span>
-                <span>2 GB safety buffer reserved</span>
+                <span>${acc.files_count || 0} files stored</span>
+                <span>Auto-rollover ready</span>
               </div>
             </div>
 

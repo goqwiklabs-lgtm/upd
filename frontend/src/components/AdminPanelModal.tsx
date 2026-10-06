@@ -8,8 +8,18 @@ import {
   Plus,
   RotateCw,
   Trash2,
+  Folder,
 } from 'lucide-react';
 import type { GoogleAccount } from '../types';
+
+function formatBytes(bytes?: number, decimals: number = 2): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
 
 interface Props {
   onClose: () => void;
@@ -143,7 +153,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
             <div>
               <h2 className="text-lg font-bold text-slate-800">CloudDrive Admin Control Panel</h2>
               <p className="text-xs text-slate-400">
-                Multi-Account 13 GB Pool Management & Storage Engine
+                Multi-Account Google Drive Pool & Storage Engine
               </p>
             </div>
           </div>
@@ -161,10 +171,10 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
             <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
               <span className="text-slate-400 font-medium">Storage Pool Used</span>
               <div className="text-base font-bold text-slate-800 mt-1">
-                {(stats.pool_used_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB
+                {formatBytes(stats.pool_used_bytes)}
               </div>
               <span className="text-[10px] text-slate-400">
-                of {(stats.pool_total_bytes / (1024 * 1024 * 1024)).toFixed(0)} GB capacity
+                of {formatBytes(stats.pool_total_bytes)} capacity
               </span>
             </div>
             <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
@@ -172,7 +182,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
               <div className="text-base font-bold text-slate-800 mt-1">
                 {stats.active_google_accounts}
               </div>
-              <span className="text-[10px] text-slate-400">13 GB pool limit each</span>
+              <span className="text-[10px] text-slate-400">Dynamic quota (-2GB buffer)</span>
             </div>
             <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
               <span className="text-slate-400 font-medium">Total Files</span>
@@ -198,7 +208,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
             }`}
           >
             <Cloud className="w-4 h-4" />
-            <span>Google Accounts (13 GB Pool)</span>
+            <span>Google Accounts Pool</span>
           </button>
           <button
             onClick={() => handleTabChange('files')}
@@ -234,8 +244,8 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
                     Active Storage Pool Accounts
                   </h3>
                   <p className="text-xs text-slate-400">
-                    When one account fills to 13 GB, uploads automatically roll over to the next
-                    account.
+                    When one account reaches its allocated quota, uploads automatically roll over to the next
+                    account in the pool.
                   </p>
                 </div>
                 <button
@@ -349,16 +359,19 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
               {/* Accounts Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {accounts.map((acc: GoogleAccount) => {
-                  const usedGb = (acc.used_storage_bytes / (1024 * 1024 * 1024)).toFixed(2);
+                  const usedBytes = acc.used_storage_bytes || 0;
+                  const limitBytes = acc.storage_limit_bytes || (13 * 1024 * 1024 * 1024);
+                  const totalCapacity = acc.total_capacity_bytes || (15 * 1024 * 1024 * 1024);
+                  const ownerUsed = acc.initial_used_bytes || 0;
                   const percent = Math.min(
                     100,
-                    Math.round((acc.used_storage_bytes / acc.storage_limit_bytes) * 100)
+                    Math.round((usedBytes / limitBytes) * 100)
                   );
                   const isFull = percent >= 100;
                   return (
                     <div
                       key={acc.id}
-                      className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4"
+                      className={`bg-white border ${isFull ? 'border-amber-300' : 'border-slate-200'} rounded-2xl p-5 shadow-xs space-y-4`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center space-x-3">
@@ -385,7 +398,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
                                   : 'text-slate-400'
                               }`}
                             >
-                              {acc.is_active ? (isFull ? '13 GB Cap Reached' : 'Active') : 'Disabled'}
+                              {acc.is_active ? (isFull ? 'Storage Cap Reached' : 'Active') : 'Disabled'}
                             </span>
                           </div>
                         </div>
@@ -393,7 +406,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
                           <button
                             onClick={() => syncQuota(acc.id)}
                             className="p-1 hover:text-blue-600 rounded-lg transition"
-                            title="Sync live quota"
+                            title="Sync live quota with Google"
                           >
                             <RotateCw className="w-3.5 h-3.5" />
                           </button>
@@ -407,12 +420,41 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
                         </div>
                       </div>
 
-                      {/* 13 GB Progress Meter */}
+                      {/* Folder Badge */}
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                        <span className="text-slate-500 font-medium flex items-center space-x-1.5">
+                          <Folder className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Target Folder:</span>
+                        </span>
+                        <span className="font-mono font-bold text-blue-600">CloudDrive_files</span>
+                      </div>
+
+                      {/* Dynamic Quota Breakdown Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-[10px] bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                        <div>
+                          <span className="text-slate-400 block">Total Drive Space</span>
+                          <strong className="text-slate-700 text-[11px]">{formatBytes(totalCapacity)}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">Owner Prior Used</span>
+                          <strong className="text-slate-700 text-[11px]">{formatBytes(ownerUsed)}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">Safety Reserved</span>
+                          <strong className="text-emerald-600 text-[11px]">2 GB Buffer</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block">CloudDrive Quota</span>
+                          <strong className="text-blue-600 text-[11px]">{formatBytes(limitBytes)}</strong>
+                        </div>
+                      </div>
+
+                      {/* Progress Meter */}
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[11px]">
-                          <span className="text-slate-400">Storage Used</span>
+                          <span className="text-slate-500">CloudDrive Used</span>
                           <span className="font-bold text-slate-700">
-                            {usedGb} GB / 13 GB ({percent}%)
+                            {formatBytes(usedBytes)} / {formatBytes(limitBytes)} ({percent}%)
                           </span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
@@ -424,8 +466,8 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose }) => {
                           ></div>
                         </div>
                         <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>{acc.files_count || 0} files</span>
-                          <span>2 GB safety buffer</span>
+                          <span>{acc.files_count || 0} files stored</span>
+                          <span>Auto-rollover ready</span>
                         </div>
                       </div>
 

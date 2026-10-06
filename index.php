@@ -38,7 +38,7 @@
 
     <!-- User Action Controls -->
     <div class="flex items-center space-x-3">
-      <a id="admin-panel-btn" href="admin.php" class="hidden px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 items-center space-x-1.5 transition">
+      <a id="admin-panel-btn" href="admin/" class="hidden px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 items-center space-x-1.5 transition">
         <i class="fa-solid fa-shield-halved"></i>
         <span>Admin Panel</span>
       </a>
