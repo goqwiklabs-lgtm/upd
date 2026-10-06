@@ -357,19 +357,251 @@
     </div>
   </div>
 
-  <!-- P2P OFFLINE SHARE MODAL (LOCALSEND / XENDER) -->
-  <div id="p2p-share-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 z-50 hidden">
-    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden relative border border-slate-700/50">
-      <div class="absolute top-4 right-4 z-50">
-        <button onclick="closeP2PShareModal()" class="w-9 h-9 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center shadow-lg transition">
-          <i class="fa-solid fa-xmark"></i>
+  <!-- P2P OFFLINE SHARE MODAL (SHAREIT / SNAPDROP ARCHITECTURE) -->
+  <div id="p2p-share-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 z-50 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-h-[92vh] border border-slate-200/90 animate-in fade-in zoom-in-95">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/25">
+            <i class="fa-solid fa-bolt text-lg text-white"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h3 class="font-bold text-base tracking-tight text-white">ShareIt P2P File Transfer</h3>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                30–80+ MB/s
+              </span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
+                Zero Data
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">
+              Auto-Discovery Radar • Direct Socket Stream • Zero Internet Required
+            </p>
+          </div>
+        </div>
+
+        <button onclick="closeP2PShareModal()" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
         </button>
       </div>
-      <iframe id="p2p-share-iframe" src="" class="w-full h-full border-0 rounded-3xl"></iframe>
+
+      <!-- Tab Switcher -->
+      <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 pt-3">
+        <div class="flex space-x-2">
+          <button id="p2p-tab-send-btn" onclick="setP2PTab('send')" class="flex items-center space-x-2 pb-3 px-4 font-semibold text-xs border-b-2 border-emerald-600 text-emerald-600 transition">
+            <i class="fa-solid fa-arrow-up-from-bracket"></i>
+            <span>Send Files</span>
+          </button>
+          <button id="p2p-tab-receive-btn" onclick="setP2PTab('receive')" class="flex items-center space-x-2 pb-3 px-4 font-semibold text-xs border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition">
+            <i class="fa-solid fa-arrow-down-to-bracket"></i>
+            <span>Receive Files</span>
+          </button>
+        </div>
+
+        <div class="flex items-center space-x-2 pb-2">
+          <span class="text-[11px] text-slate-400 font-medium">Radar:</span>
+          <span id="p2p-radar-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+            Searching...
+          </span>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+        
+        <!-- SECTION 1: SEND FILES -->
+        <div id="p2p-send-section" class="space-y-6">
+          <input type="file" id="p2p-send-file-input" class="hidden" multiple>
+
+          <!-- Dropzone -->
+          <div id="p2p-send-dropzone" onclick="document.getElementById('p2p-send-file-input').click()"
+               class="border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-3xl p-10 flex flex-col items-center justify-center text-center transition cursor-pointer bg-white">
+            <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-inner text-2xl">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <h4 class="font-bold text-slate-800 text-base mb-1">Select 4K Videos or Large Files to Stream</h4>
+            <p class="text-xs text-slate-500 max-w-sm mb-4">
+              Send raw videos, zip archives, or photo galleries directly to any nearby phone or PC without internet.
+            </p>
+            <span class="px-4 py-2 bg-emerald-600 text-white font-medium text-xs rounded-xl shadow-md shadow-emerald-500/25">
+              Browse Local Files
+            </span>
+          </div>
+
+          <!-- Active Hosting Card -->
+          <div id="p2p-send-active-card" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <!-- Left: QR Code to Scan -->
+            <div class="lg:col-span-6 flex flex-col items-center bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+              <div class="flex items-center justify-between w-full">
+                <span class="font-bold text-xs text-slate-800 flex items-center space-x-1.5">
+                  <i class="fa-solid fa-qrcode text-emerald-600"></i>
+                  <span>Scan to Receive on Phone</span>
+                </span>
+                <span id="p2p-send-code-badge" class="px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-slate-100 text-slate-700">
+                  CODE: ------
+                </span>
+              </div>
+
+              <!-- Canvas QR -->
+              <div class="p-3 bg-white rounded-2xl border-2 border-slate-900 shadow-lg">
+                <canvas id="p2p-send-qr-canvas" class="w-[210px] h-[210px] object-contain rounded-lg"></canvas>
+              </div>
+
+              <p class="text-[11px] text-slate-500 text-center">
+                Point any phone camera at this QR code to download instantly over local high-speed link.
+              </p>
+
+              <!-- Join Link -->
+              <div class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                <div class="truncate mr-2">
+                  <span class="text-[10px] text-slate-400 block">Download URL</span>
+                  <input type="text" id="p2p-send-join-link" readonly class="w-full font-mono font-bold text-slate-700 text-[11px] bg-transparent outline-none truncate">
+                </div>
+                <button onclick="copyP2PJoinLink()" class="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 transition" title="Copy Link">
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Right: File Info & Nearby Radar -->
+            <div class="lg:col-span-6 space-y-4">
+              <!-- File Details Card -->
+              <div class="p-4 bg-white rounded-2xl border border-slate-200/80 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-2.5">
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-base">
+                      <i class="fa-regular fa-file"></i>
+                    </div>
+                    <div>
+                      <h5 id="p2p-send-file-name" class="font-bold text-slate-800 text-xs truncate max-w-[200px]">File</h5>
+                      <span id="p2p-send-file-size" class="text-[10px] text-slate-400 font-mono">0 MB</span>
+                    </div>
+                  </div>
+                  <button onclick="resetP2PSender()" class="text-[11px] text-blue-600 hover:underline font-semibold">
+                    Change File
+                  </button>
+                </div>
+
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span class="text-slate-400">Stream Status:</span>
+                  <span id="p2p-send-upload-status" class="text-emerald-600 font-bold text-[11px]">Stream Live!</span>
+                </div>
+              </div>
+
+              <!-- Nearby Radar Peer List -->
+              <div class="p-4 bg-white rounded-2xl border border-slate-200/80 space-y-2.5">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-bold text-slate-800 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-satellite-dish text-emerald-600"></i>
+                    <span>Nearby Devices on Subnet</span>
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-mono">Tap to Send</span>
+                </div>
+                <div id="p2p-radar-peer-list" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: RECEIVE FILES -->
+        <div id="p2p-receive-section" class="hidden space-y-6">
+          <!-- Pending Incoming Session -->
+          <div id="p2p-receive-pending" class="p-6 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+            <div class="flex items-center space-x-3.5">
+              <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                <i class="fa-solid fa-mobile-screen"></i>
+              </div>
+              <div>
+                <h4 class="font-bold text-slate-800 text-sm">
+                  Incoming File from <span id="p2p-receive-sender-name">Nearby Device</span>
+                </h4>
+                <p class="text-xs text-slate-500">
+                  Ready to stream directly over local network at 30–80+ MB/s
+                </p>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+              <div>
+                <span id="p2p-receive-file-name" class="font-bold text-xs text-slate-800 block truncate max-w-sm">File Name</span>
+                <span id="p2p-receive-file-size" class="text-[10px] text-slate-400 font-mono">0 MB</span>
+              </div>
+              <button onclick="startP2PDownload()" class="px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/25 flex items-center space-x-2 transition">
+                <i class="fa-solid fa-bolt"></i>
+                <span>Accept & Download Now</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Download Speedometer Card -->
+          <div id="p2p-receive-active" class="hidden p-6 bg-slate-900 text-white rounded-3xl shadow-xl space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
+                  High-Speed Socket Streaming
+                </span>
+                <h4 class="font-bold text-base text-white">Receiving File Chunks...</h4>
+              </div>
+              <div class="text-right">
+                <span id="p2p-receive-speed" class="text-2xl font-black font-mono text-emerald-400">0.0 MB/s</span>
+                <span id="p2p-receive-eta" class="text-[10px] text-slate-400 block font-mono">ETA: --</span>
+              </div>
+            </div>
+
+            <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700">
+              <div id="p2p-receive-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-150" style="width: 0%"></div>
+            </div>
+
+            <div class="flex justify-between items-center text-xs text-slate-400 font-mono">
+              <span id="p2p-receive-bytes">0 B / 0 B</span>
+              <span id="p2p-receive-pct">0%</span>
+            </div>
+          </div>
+
+          <!-- Done Card -->
+          <div id="p2p-receive-done" class="hidden p-6 bg-gradient-to-tr from-emerald-50 to-teal-50 border-2 border-emerald-400 rounded-2xl shadow-lg space-y-2 text-center">
+            <div class="w-12 h-12 mx-auto rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl">
+              <i class="fa-solid fa-check"></i>
+            </div>
+            <h4 class="font-bold text-emerald-900 text-base">File Download Complete!</h4>
+            <p class="text-xs text-emerald-700">The file has been saved to your downloads folder at maximum speed.</p>
+          </div>
+
+          <!-- Manual Code Entry Box -->
+          <div class="p-4 bg-white rounded-2xl border border-slate-200/80 space-y-2">
+            <label class="text-xs font-semibold text-slate-700 block">Have a 6-digit Code from Sender?</label>
+            <div class="flex items-center space-x-2">
+              <input type="text" id="p2p-manual-code-input" placeholder="e.g. 748291" class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase tracking-wider outline-none focus:border-emerald-500">
+              <button onclick="handleP2PManualJoin()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition">
+                Connect
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-3 bg-white border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span class="text-[11px]">Direct P2P Link • No Cloud Relay • 100% Offline Compatible</span>
+        </div>
+        <button onclick="closeP2PShareModal()" class="px-4 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition">
+          Close
+        </button>
+      </div>
+
     </div>
   </div>
 
-  <!-- Application Logic -->
+  <!-- QR Code Renderer Library (Offline Local) -->
+  <script src="assets/js/qrcode.min.js"></script>
+  <!-- Application & P2P Logic -->
   <script src="assets/js/app.js"></script>
+  <script src="assets/js/p2p.js"></script>
 </body>
 </html>

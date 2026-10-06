@@ -1072,24 +1072,26 @@ function getFileIcon(filename, mime) {
   return { icon: 'fa-regular fa-file', color: 'text-slate-600', bg: 'bg-slate-50' };
 }
 
-// --- P2P OFFLINE TRANSFER (LOCALSEND / XENDER ARCHITECTURE) ---
-function openP2PShareModal() {
-  const modal = document.getElementById('p2p-share-modal') || document.getElementById('qr-files-modal');
-  const iframe = document.getElementById('p2p-share-iframe') || document.getElementById('qr-files-iframe');
-  if (modal && iframe) {
-    if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('index.html')) {
-      iframe.src = '/dist/index.html#p2p';
-    } else {
-      iframe.contentWindow?.postMessage({ action: 'open_p2p' }, '*');
-    }
+// --- P2P OFFLINE TRANSFER (SHAREIT & SNAPDROP ARCHITECTURE) ---
+function openP2PShareModal(tab) {
+  const modal = document.getElementById('p2p-share-modal');
+  if (modal) {
     modal.classList.remove('hidden');
+    if (typeof window.setP2PTab === 'function') {
+      window.setP2PTab(tab || 'send');
+    }
   }
 }
 
 function closeP2PShareModal() {
-  const modal = document.getElementById('p2p-share-modal') || document.getElementById('qr-files-modal');
+  const modal = document.getElementById('p2p-share-modal');
   if (modal) {
     modal.classList.add('hidden');
+  }
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('join')) {
+    url.searchParams.delete('join');
+    window.history.replaceState(null, '', url.pathname + (url.search || ''));
   }
 }
 
