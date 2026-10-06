@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/google.php';
 
 $pdo = getDBConnection();
 $userId = (int)$_SESSION['user_id'];
@@ -54,6 +55,18 @@ $fileId = $pdo->lastInsertId();
 // 2. Increment used_storage_bytes for this Google storage account
 $updateAcc = $pdo->prepare("UPDATE google_accounts SET used_storage_bytes = used_storage_bytes + ? WHERE id = ?");
 $updateAcc->execute([$size, $googleAccountId]);
+
+// 3. Unlock Google Edge CDN & Adaptive Video Streaming for instant load
+$accStmt = $pdo->prepare("SELECT * FROM google_accounts WHERE id = ?");
+$accStmt->execute([$googleAccountId]);
+$accRow = $accStmt->fetch();
+if ($accRow) {
+    try {
+        GoogleDriveManager::setGoogleFilePublic($accRow, $pdo, $googleFileId, true);
+    } catch (Exception $e) {
+        error_log("Failed to set file reader permission: " . $e->getMessage());
+    }
+}
 
 echo json_encode([
     'success' => true,

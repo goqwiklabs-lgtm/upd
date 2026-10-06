@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw, Copy, Check, Eye, Code } from 'lucide-react';
+import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw, Copy, Check, Eye, Code, Zap, Play } from 'lucide-react';
 import type { FileItem } from '../types';
 
 interface Props {
@@ -13,6 +13,8 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [htmlView, setHtmlView] = useState<'preview' | 'code'>('preview');
+  const [videoMode, setVideoMode] = useState<'cloud' | 'direct'>('cloud');
+  const [imgSrc, setImgSrc] = useState<string>('');
 
   const ext = file?.name.split('.').pop()?.toLowerCase() || '';
   const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
@@ -27,12 +29,21 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
   const isCode = (file?.mime_type.startsWith('text/') || codeExts.includes(ext)) ?? false;
   const isHtml = ['html', 'htm'].includes(ext);
 
+  const googleFileId = file?.google_file_id || '';
+  const streamUrl = file ? `stream.php?id=${file.id}` : '';
+  const cloudPreviewUrl = googleFileId ? `https://drive.google.com/file/d/${googleFileId}/preview` : null;
+
   useEffect(() => {
     setZoom(1);
     setRotation(0);
     setTextContent(null);
     setCopied(false);
     setHtmlView('preview');
+    setVideoMode('cloud');
+
+    if (file) {
+      setImgSrc(file.google_file_id ? `https://lh3.googleusercontent.com/d/${file.google_file_id}` : `stream.php?id=${file.id}`);
+    }
 
     if (file && isCode) {
       fetch(`stream.php?id=${file.id}`)
@@ -43,8 +54,6 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
   }, [file, isCode]);
 
   if (!file) return null;
-
-  const streamUrl = `stream.php?id=${file.id}`;
 
   const copyToClipboard = () => {
     if (textContent) {
@@ -73,6 +82,34 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Video Player Toggle */}
+          {isVideo && cloudPreviewUrl && (
+            <div className="flex items-center bg-slate-800 rounded-xl p-1 text-xs mr-2">
+              <button
+                type="button"
+                onClick={() => setVideoMode('cloud')}
+                className={`px-3 py-1 rounded-lg font-semibold flex items-center space-x-1.5 transition ${
+                  videoMode === 'cloud' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Instant adaptive stream via Google Cloud (zero buffer delay)"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300" />
+                <span>Instant Stream</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVideoMode('direct')}
+                className={`px-3 py-1 rounded-lg font-semibold flex items-center space-x-1.5 transition ${
+                  videoMode === 'direct' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Direct raw file stream"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Raw Video</span>
+              </button>
+            </div>
+          )}
+
           {/* HTML Toggle View */}
           {isHtml && (
             <div className="flex items-center bg-slate-800 rounded-xl p-1 text-xs mr-2">
@@ -157,21 +194,38 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
       {/* Main Preview Workspace */}
       <div className="flex-1 flex items-center justify-center max-w-6xl w-full mx-auto overflow-hidden p-2">
         {isVideo ? (
-          <div className="w-full max-h-[75vh] flex items-center justify-center bg-black rounded-2xl overflow-hidden shadow-2xl">
-            <video
-              controls
-              autoPlay
-              className="w-full max-h-[75vh] object-contain rounded-2xl"
-              preload="metadata"
-            >
-              <source src={streamUrl} type={file.mime_type} />
-              Your browser does not support video playback.
-            </video>
-          </div>
+          videoMode === 'cloud' && cloudPreviewUrl ? (
+            <div className="w-full h-[75vh] flex items-center justify-center bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+              <iframe
+                src={cloudPreviewUrl}
+                title={file.name}
+                className="w-full h-full border-0 rounded-2xl"
+                allow="autoplay; fullscreen"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <div className="w-full max-h-[75vh] flex items-center justify-center bg-black rounded-2xl overflow-hidden shadow-2xl">
+              <video
+                controls
+                autoPlay
+                className="w-full max-h-[75vh] object-contain rounded-2xl"
+                preload="metadata"
+              >
+                <source src={streamUrl} type={file.mime_type} />
+                Your browser does not support video playback.
+              </video>
+            </div>
+          )
         ) : isImage ? (
           <div className="overflow-auto max-h-[75vh] flex items-center justify-center">
             <img
-              src={streamUrl}
+              src={imgSrc || streamUrl}
+              onError={() => {
+                if (imgSrc !== streamUrl) {
+                  setImgSrc(streamUrl);
+                }
+              }}
               alt={file.name}
               style={{
                 transform: `scale(${zoom}) rotate(${rotation}deg)`,
@@ -181,11 +235,14 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
             />
           </div>
         ) : isPdf ? (
-          <iframe
-            src={streamUrl}
-            title={file.name}
-            className="w-full h-[75vh] rounded-2xl border border-slate-800 shadow-2xl"
-          />
+          <div className="w-full h-[75vh] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-900">
+            <iframe
+              src={cloudPreviewUrl || streamUrl}
+              title={file.name}
+              className="w-full h-full border-0"
+              allowFullScreen
+            />
+          </div>
         ) : isAudio ? (
           <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl space-y-4">
             <div className="w-20 h-20 mx-auto rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center text-3xl">

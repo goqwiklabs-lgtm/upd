@@ -855,6 +855,9 @@ function openFilePreview(fileId) {
 
   const mime = file.mime_type || '';
   const streamUrl = `stream.php?id=${file.id}`;
+  const googleFileId = file.google_file_id || '';
+  const cdnImgUrl = googleFileId ? `https://lh3.googleusercontent.com/d/${googleFileId}` : streamUrl;
+  const cloudPreviewUrl = googleFileId ? `https://drive.google.com/file/d/${googleFileId}/preview` : null;
 
   const ext = file.name.split('.').pop().toLowerCase();
   const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
@@ -870,21 +873,44 @@ function openFilePreview(fileId) {
   const isCode  = codeExts.includes(ext) || mime.startsWith('text/');
 
   if (isVideo) {
-    content.innerHTML = `
-      <video controls autoplay class="w-full max-h-[75vh] rounded-2xl shadow-2xl bg-black" preload="metadata">
-        <source src="${streamUrl}" type="${mime}">
-        Your browser does not support video playback.
-      </video>
-    `;
+    if (cloudPreviewUrl) {
+      content.innerHTML = `
+        <div class="w-full flex flex-col items-center">
+          <div class="w-full flex items-center justify-between mb-2 text-xs">
+            <span class="text-slate-400"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>Adaptive Cloud Stream (zero buffer delay)</span>
+            <div class="flex items-center bg-slate-900 border border-slate-800 p-0.5 rounded-xl">
+              <button type="button" id="btn-modal-cloud" onclick="switchModalVideo('cloud')" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition shadow-xs">⚡ Instant Stream</button>
+              <button type="button" id="btn-modal-direct" onclick="switchModalVideo('direct')" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-medium transition">🎬 Raw Video</button>
+            </div>
+          </div>
+          <div id="modal-video-cloud" class="w-full h-[70vh] rounded-2xl overflow-hidden shadow-2xl bg-black border border-slate-800">
+            <iframe src="${cloudPreviewUrl}" class="w-full h-full border-0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+          </div>
+          <div id="modal-video-direct" class="w-full max-h-[70vh] rounded-2xl shadow-2xl bg-black border border-slate-800 hidden">
+            <video id="modal-direct-player" controls class="w-full max-h-[70vh] rounded-2xl" preload="metadata">
+              <source src="${streamUrl}" type="${mime}">
+              Your browser does not support video playback.
+            </video>
+          </div>
+        </div>
+      `;
+    } else {
+      content.innerHTML = `
+        <video controls autoplay class="w-full max-h-[75vh] rounded-2xl shadow-2xl bg-black" preload="metadata">
+          <source src="${streamUrl}" type="${mime}">
+          Your browser does not support video playback.
+        </video>
+      `;
+    }
   } else if (isImage) {
     content.innerHTML = `
       <div class="flex items-center justify-center p-4">
-        <img src="${streamUrl}" alt="${escapeHtml(file.name)}" class="max-h-[75vh] max-w-full rounded-2xl shadow-2xl object-contain">
+        <img src="${cdnImgUrl}" onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='${streamUrl}';}" alt="${escapeHtml(file.name)}" class="max-h-[75vh] max-w-full rounded-2xl shadow-2xl object-contain">
       </div>
     `;
   } else if (isPdf) {
     content.innerHTML = `
-      <iframe src="${streamUrl}" class="w-full h-[75vh] rounded-2xl border-0 shadow-2xl"></iframe>
+      <iframe src="${cloudPreviewUrl || streamUrl}" class="w-full h-[75vh] rounded-2xl border-0 shadow-2xl" allowfullscreen></iframe>
     `;
   } else if (isAudio) {
     content.innerHTML = `
@@ -941,6 +967,26 @@ function closePreviewModal() {
   const content = document.getElementById('preview-modal-content');
   content.innerHTML = '';
   modal.classList.add('hidden');
+}
+
+function switchModalVideo(mode) {
+  const cloud = document.getElementById('modal-video-cloud');
+  const direct = document.getElementById('modal-video-direct');
+  const btnCloud = document.getElementById('btn-modal-cloud');
+  const btnDirect = document.getElementById('btn-modal-direct');
+  const vid = document.getElementById('modal-direct-player');
+  if (mode === 'cloud') {
+    if (cloud) cloud.classList.remove('hidden');
+    if (direct) direct.classList.add('hidden');
+    if (vid) vid.pause();
+    if (btnCloud) btnCloud.className = 'px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition shadow-xs';
+    if (btnDirect) btnDirect.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-medium transition';
+  } else {
+    if (cloud) cloud.classList.add('hidden');
+    if (direct) direct.classList.remove('hidden');
+    if (btnDirect) btnDirect.className = 'px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition shadow-xs';
+    if (btnCloud) btnCloud.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-medium transition';
+  }
 }
 
 // --- HELPER FUNCTIONS ---

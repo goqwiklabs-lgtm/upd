@@ -42,6 +42,9 @@ $isHtml  = in_array($ext, ['html', 'htm']);
 
 $streamUrl = "stream.php?token=" . urlencode($token);
 $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
+$googleFileId = $file['google_file_id'] ?? '';
+$googleCdnImgUrl = !empty($googleFileId) ? "https://lh3.googleusercontent.com/d/" . htmlspecialchars($googleFileId) : $streamUrl;
+$googlePreviewUrl = !empty($googleFileId) ? "https://drive.google.com/file/d/" . htmlspecialchars($googleFileId) . "/preview" : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -126,7 +129,7 @@ $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
                     </div>
                 </div>
 
-                <!-- Code / HTML view toggles if applicable -->
+                <!-- Code / HTML / Video view toggles if applicable -->
                 <?php if ($isHtml): ?>
                 <div class="flex items-center bg-slate-800/80 p-1 rounded-xl text-xs">
                     <button onclick="switchHtmlView('preview')" id="btn-html-preview" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold transition">
@@ -136,6 +139,15 @@ $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
                         <i class="fa-solid fa-code mr-1"></i> Source Code
                     </button>
                 </div>
+                <?php elseif ($isVideo && !empty($googlePreviewUrl)): ?>
+                <div class="flex items-center bg-slate-800/80 p-1 rounded-xl text-xs">
+                    <button onclick="switchVideoPlayer('cloud')" id="btn-stream-cloud" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-bolt text-amber-300 mr-1"></i> Instant Cloud Stream
+                    </button>
+                    <button onclick="switchVideoPlayer('direct')" id="btn-stream-direct" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white font-semibold transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-play mr-1"></i> Raw Video
+                    </button>
+                </div>
                 <?php endif; ?>
             </div>
 
@@ -143,15 +155,33 @@ $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
             <div class="bg-black/40 flex items-center justify-center min-h-[400px] max-h-[75vh] overflow-auto p-4 relative">
                 <?php if ($isVideo): ?>
                     <!-- VIDEO VIEWER -->
-                    <video controls autoplay class="w-full max-h-[70vh] rounded-2xl shadow-2xl bg-black" preload="metadata">
-                        <source src="<?= $streamUrl ?>" type="<?= htmlspecialchars($mimeType) ?>">
-                        Your browser does not support video streaming.
-                    </video>
+                    <div class="w-full flex flex-col items-center">
+                        <?php if (!empty($googlePreviewUrl)): ?>
+                        <div id="video-cloud-container" class="w-full h-[70vh] rounded-2xl overflow-hidden shadow-2xl bg-black border border-slate-800">
+                            <iframe src="<?= $googlePreviewUrl ?>" class="w-full h-full border-0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                        </div>
+                        <div id="video-direct-container" class="w-full max-h-[70vh] rounded-2xl shadow-2xl bg-black border border-slate-800 hidden">
+                            <video id="direct-video-player" controls class="w-full max-h-[70vh] rounded-2xl" preload="metadata">
+                                <source src="<?= $streamUrl ?>" type="<?= htmlspecialchars($mimeType) ?>">
+                                Your browser does not support video streaming.
+                            </video>
+                        </div>
+                        <?php else: ?>
+                        <video controls autoplay class="w-full max-h-[70vh] rounded-2xl shadow-2xl bg-black" preload="metadata">
+                            <source src="<?= $streamUrl ?>" type="<?= htmlspecialchars($mimeType) ?>">
+                            Your browser does not support video streaming.
+                        </video>
+                        <?php endif; ?>
+                    </div>
 
                 <?php elseif ($isImage): ?>
-                    <!-- IMAGE VIEWER -->
+                    <!-- IMAGE VIEWER (Google Edge CDN + instant fallback to stream.php) -->
                     <div class="flex flex-col items-center justify-center space-y-4">
-                        <img id="shared-img" src="<?= $streamUrl ?>" alt="<?= $fileName ?>" class="max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl transition-transform duration-200">
+                        <img id="shared-img" 
+                             src="<?= $googleCdnImgUrl ?>" 
+                             onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='<?= $streamUrl ?>';}" 
+                             alt="<?= $fileName ?>" 
+                             class="max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl transition-transform duration-200">
                         <div class="flex items-center space-x-2 bg-slate-800/90 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs text-slate-300">
                             <button onclick="zoomImg(-0.2)" class="px-2 py-1 hover:text-white"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
                             <span id="zoom-text" class="font-mono px-2">100%</span>
@@ -177,7 +207,9 @@ $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
 
                 <?php elseif ($isPdf): ?>
                     <!-- PDF VIEWER -->
-                    <iframe src="<?= $streamUrl ?>" class="w-full h-[70vh] rounded-2xl border border-slate-800"></iframe>
+                    <div class="w-full h-[70vh] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-900">
+                        <iframe src="<?= !empty($googlePreviewUrl) ? $googlePreviewUrl : $streamUrl ?>" class="w-full h-full border-0" allowfullscreen></iframe>
+                    </div>
 
                 <?php elseif ($isHtml): ?>
                     <!-- HTML VIEWER (RENDERED OR CODE) -->
@@ -253,6 +285,27 @@ $downloadUrl = "stream.php?token=" . urlencode($token) . "&download=1";
         const txt = document.getElementById('zoom-text');
         if (img) img.style.transform = `scale(${currentZoom}) rotate(${currentRot}deg)`;
         if (txt) txt.textContent = Math.round(currentZoom * 100) + '%';
+      }
+
+      function switchVideoPlayer(mode) {
+        const cloudBox = document.getElementById('video-cloud-container');
+        const directBox = document.getElementById('video-direct-container');
+        const btnCloud = document.getElementById('btn-stream-cloud');
+        const btnDirect = document.getElementById('btn-stream-direct');
+        const directVid = document.getElementById('direct-video-player');
+
+        if (mode === 'cloud') {
+          if (cloudBox) cloudBox.classList.remove('hidden');
+          if (directBox) directBox.classList.add('hidden');
+          if (directVid) directVid.pause();
+          if (btnCloud) btnCloud.className = 'px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold transition flex items-center space-x-1.5';
+          if (btnDirect) btnDirect.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white font-semibold transition flex items-center space-x-1.5';
+        } else {
+          if (cloudBox) cloudBox.classList.add('hidden');
+          if (directBox) directBox.classList.remove('hidden');
+          if (btnDirect) btnDirect.className = 'px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold transition flex items-center space-x-1.5';
+          if (btnCloud) btnCloud.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white font-semibold transition flex items-center space-x-1.5';
+        }
       }
 
       // Load code text if code viewer is active

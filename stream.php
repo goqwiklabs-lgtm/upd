@@ -49,6 +49,23 @@ $fileName = $file['name'];
 $fileSize = (int)$file['size_bytes'];
 $mimeType = $file['mime_type'] ?: 'application/octet-stream';
 
+// High-performance caching headers for browser and mobile
+$etag = '"' . md5($googleFileId . '_' . $fileSize) . '"';
+header('ETag: ' . $etag);
+header('Cache-Control: public, max-age=604800, stale-while-revalidate=86400');
+header('Expires: ' . gmdate('D, d M Y H:i:s \G\M\T', time() + 604800));
+
+// If client already cached the file, return 304 Not Modified immediately in 0ms!
+if (isset($_SERVER['HTTP_IF_NONE_MATCH']) && trim($_SERVER['HTTP_IF_NONE_MATCH']) === $etag) {
+    http_response_code(304);
+    exit;
+}
+
+// Clear any active PHP output buffers to prevent buffering delays
+while (ob_get_level()) {
+    ob_end_clean();
+}
+
 // Prepare headers for client
 header('Accept-Ranges: bytes');
 header("Content-Type: $mimeType");
@@ -56,7 +73,7 @@ header("Content-Type: $mimeType");
 $disposition = $download ? 'attachment' : 'inline';
 header("Content-Disposition: $disposition; filename=\"" . rawurlencode($fileName) . "\"");
 
-// Check HTTP Range header for video seeking
+// Check HTTP Range header for fast video/audio seeking
 $rangeHeader = $_SERVER['HTTP_RANGE'] ?? null;
 $headers = [
     'Authorization: Bearer ' . $accessToken,
@@ -72,14 +89,15 @@ $url = "https://www.googleapis.com/drive/v3/files/{$googleFileId}?alt=media";
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_HTTPHEADER => $headers,
-    CURLOPT_RETURNTRANSFER => false, // stream directly to output
+    CURLOPT_RETURNTRANSFER => false, // stream directly to client
     CURLOPT_WRITEFUNCTION => function($ch, $chunk) {
         echo $chunk;
         flush();
         return strlen($chunk);
     },
-    CURLOPT_BUFFERSIZE => 256 * 1024, // 256 KB buffer for fast streaming
-    CURLOPT_TIMEOUT => 300,
+    CURLOPT_BUFFERSIZE => 1024 * 1024, // 1 MB buffer for high streaming throughput
+    CURLOPT_TCP_NODELAY => 1,
+    CURLOPT_TIMEOUT => 600,
 ]);
 
 // If Range header was present, pass along Content-Range
