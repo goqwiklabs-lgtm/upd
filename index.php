@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudDrive - Personal Cloud Storage</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Custom UI & Basketball Animation Styles -->
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- TOP NAVBAR -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs">
+    <!-- Brand -->
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+        <i class="fa-solid fa-cloud text-lg"></i>
+      </div>
+      <div>
+        <span class="font-bold text-lg text-slate-800 tracking-tight">CloudDrive</span>
+        <span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-1">Pro</span>
+      </div>
+    </div>
+
+    <!-- Search Input -->
+    <div class="hidden md:flex items-center flex-1 max-w-md mx-8">
+      <div class="relative w-full">
+        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+          <i class="fa-solid fa-magnifying-glass text-sm"></i>
+        </span>
+        <input type="text" id="search-input" placeholder="Search in drive..." class="w-full pl-9 pr-4 py-2 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-blue-500 rounded-xl text-sm transition outline-none">
+      </div>
+    </div>
+
+    <!-- User Action Controls -->
+    <div class="flex items-center space-x-3">
+      <a id="admin-panel-btn" href="admin.php" class="hidden px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 items-center space-x-1.5 transition">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>Admin Panel</span>
+      </a>
+
+      <div class="flex items-center space-x-2 pl-2 border-l border-slate-200">
+        <div class="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center uppercase" id="user-avatar">
+          <i class="fa-solid fa-user"></i>
+        </div>
+        <div class="hidden sm:block text-left">
+          <div class="text-xs font-semibold text-slate-800" id="user-name-display">Guest</div>
+          <div class="text-[10px] text-slate-400" id="user-email-display">Not logged in</div>
+        </div>
+        <button onclick="handleLogout()" title="Logout" class="text-slate-400 hover:text-red-500 p-1.5 rounded-lg transition ml-1">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN BODY LAYOUT -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="w-64 bg-white border-r border-slate-200 p-4 hidden lg:flex flex-col justify-between shrink-0">
+      <div class="space-y-6">
+        <!-- Action Buttons -->
+        <div class="space-y-2">
+          <button onclick="document.getElementById('cloud-file-input').click()" class="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm rounded-xl shadow-md shadow-blue-500/20 transition flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <span>Upload Files</span>
+          </button>
+          <button onclick="promptNewFolder()" class="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl transition flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-folder-plus text-amber-500"></i>
+            <span>New Folder</span>
+          </button>
+        </div>
+
+        <!-- Navigation Links -->
+        <nav class="space-y-1">
+          <button onclick="loadFiles(null)" class="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-xl transition">
+            <i class="fa-solid fa-hard-drive"></i>
+            <span>My Drive</span>
+          </button>
+          <button class="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition">
+            <i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
+            <span>Recent</span>
+          </button>
+          <button class="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition">
+            <i class="fa-solid fa-share-nodes text-slate-400"></i>
+            <span>Shared Links</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Storage Usage Meter -->
+      <div class="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+        <div class="flex items-center justify-between text-xs text-slate-600 font-medium mb-1.5">
+          <span class="flex items-center"><i class="fa-solid fa-cloud text-blue-500 mr-1.5"></i> Storage</span>
+          <span id="user-storage-text" class="text-slate-400">0 MB used</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-2">Unlimited Multi-Account Storage Pool</p>
+      </div>
+    </aside>
+
+    <!-- MAIN VIEW AREA -->
+    <main class="flex-1 overflow-y-auto p-4 sm:p-8 space-y-8">
+
+      <!-- THE BASKETBALL HOOP DROPZONE SECTION (Inspired by video) -->
+      <section class="max-w-2xl mx-auto">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <div>
+            <h1 class="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Upload files</h1>
+            <p class="text-xs sm:text-sm text-slate-400">Drag and drop, or take the shot.</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span id="uploaded-counter-badge" class="px-3 py-1 bg-slate-200/70 text-slate-700 text-xs font-bold rounded-full">
+              Uploaded 0
+            </span>
+          </div>
+        </div>
+
+        <!-- Basketball Hoop Interactive Drop Box -->
+        <div id="shot-dropzone" class="dropzone relative bg-white border-2 border-dashed border-slate-300 rounded-3xl p-8 text-center transition-all cursor-pointer shadow-xs hover:border-blue-400 overflow-hidden" onclick="document.getElementById('cloud-file-input').click()">
+          <!-- Trajectory Canvas -->
+          <canvas id="trajectory-canvas"></canvas>
+
+          <div class="flex flex-col items-center justify-center space-y-4">
+            <div class="flex items-center space-x-2 text-slate-600 text-sm font-medium">
+              <i class="fa-solid fa-arrow-up-from-bracket text-blue-500"></i>
+              <span>Drop files here or take the shot</span>
+            </div>
+
+            <!-- Basketball Hoop Illustration -->
+            <div class="hoop-container">
+              <div class="hoop-backboard">
+                <div class="hoop-inner-box"></div>
+              </div>
+              <div class="hoop-rim"></div>
+              <div class="hoop-net"></div>
+              <div class="score-pop">+1</div>
+            </div>
+
+            <p class="text-xs text-slate-400">Supports videos, images, PDFs, documents, up to 2GB+ per file</p>
+          </div>
+
+          <!-- Hidden Input for File Selector -->
+          <input type="file" id="cloud-file-input" multiple class="hidden">
+        </div>
+      </section>
+
+      <!-- FILE EXPLORER SECTION -->
+      <section class="max-w-6xl mx-auto space-y-4">
+        <!-- Breadcrumbs & Quick Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-200">
+          <div id="breadcrumbs-bar" class="flex items-center text-sm text-slate-500 overflow-x-auto">
+            <!-- Dynamically populated -->
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button onclick="promptNewFolder()" class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition shadow-2xs inline-flex items-center space-x-1.5">
+              <i class="fa-solid fa-folder-plus text-amber-500"></i>
+              <span>New folder</span>
+            </button>
+            <button onclick="document.getElementById('cloud-file-input').click()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition shadow-xs inline-flex items-center space-x-1.5">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <span>Upload</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Files & Folders Container -->
+        <div id="file-explorer-content">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- FLOATING UPLOAD PROGRESS DOCK (BOTTOM RIGHT) -->
+  <div id="upload-dock" class="fixed bottom-6 right-6 z-50 w-80 max-w-[90vw] hidden transition-all">
+    <div class="bg-white border border-slate-200/90 rounded-2xl shadow-xl p-3 backdrop-blur space-y-2">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <span class="text-xs font-bold text-slate-800 flex items-center">
+          <i class="fa-solid fa-circle-arrow-up text-blue-500 mr-1.5"></i> Upload Activity
+        </span>
+        <button onclick="document.getElementById('upload-dock').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 text-xs">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="upload-dock-items" class="space-y-2 max-h-60 overflow-y-auto">
+        <!-- Dynamically added upload items -->
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEXT MENU (RIGHT CLICK OR 3-DOTS) -->
+  <div id="context-menu" class="context-menu hidden">
+    <div onclick="ctxOpen()" class="context-menu-item">
+      <i class="fa-solid fa-arrow-up-right-from-square text-blue-500"></i>
+      <span>Open / Preview</span>
+    </div>
+    <div onclick="ctxShare()" class="context-menu-item ctx-file-only">
+      <i class="fa-solid fa-share-nodes text-emerald-500"></i>
+      <span>Share Link</span>
+    </div>
+    <div onclick="ctxRename()" class="context-menu-item">
+      <i class="fa-solid fa-pen text-slate-500"></i>
+      <span>Rename</span>
+    </div>
+    <div onclick="ctxCopy()" class="context-menu-item ctx-file-only">
+      <i class="fa-solid fa-copy text-indigo-500"></i>
+      <span>Make a copy</span>
+    </div>
+    <div onclick="ctxDownload()" class="context-menu-item ctx-file-only">
+      <i class="fa-solid fa-download text-amber-500"></i>
+      <span>Download</span>
+    </div>
+    <div class="my-1 border-t border-slate-100"></div>
+    <div onclick="ctxDelete()" class="context-menu-item danger">
+      <i class="fa-solid fa-trash text-red-500"></i>
+      <span>Delete</span>
+    </div>
+  </div>
+
+  <!-- AUTH MODAL (LOGIN / REGISTER) -->
+  <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100">
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white mx-auto mb-3 shadow-lg shadow-blue-500/25 text-xl">
+          <i class="fa-solid fa-cloud"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">Welcome to CloudDrive</h2>
+        <p class="text-xs text-slate-400 mt-1">Multi-Account Cloud Storage Platform</p>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex border-b border-slate-200 mb-6">
+        <button id="tab-login" onclick="switchAuthTab('login')" class="flex-1 pb-3 text-center text-sm font-semibold border-b-2 border-blue-600 text-blue-600 transition">Login</button>
+        <button id="tab-register" onclick="switchAuthTab('register')" class="flex-1 pb-3 text-center text-sm font-semibold border-b-2 border-transparent text-slate-400 transition">Register</button>
+      </div>
+
+      <div id="auth-error" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl"></div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">Username or Email</label>
+          <input type="text" name="identifier" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">Password</label>
+          <input type="password" name="password" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm rounded-xl transition shadow-md shadow-blue-500/20">Sign In</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" onsubmit="handleRegister(event)" class="space-y-4 hidden">
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">Username</label>
+          <input type="text" name="username" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">Email</label>
+          <input type="email" name="email" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">Password (min 6 characters)</label>
+          <input type="password" name="password" minlength="6" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm rounded-xl transition shadow-md shadow-blue-500/20">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- NEW FOLDER MODAL -->
+  <div id="new-folder-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100">
+      <h3 class="text-base font-bold text-slate-800 mb-4 flex items-center">
+        <i class="fa-solid fa-folder-plus text-amber-500 mr-2"></i> New Folder
+      </h3>
+      <form onsubmit="handleCreateFolder(event)" class="space-y-4">
+        <div>
+          <input type="text" id="new-folder-name" placeholder="Folder name" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition">
+        </div>
+        <div class="flex items-center justify-end space-x-2">
+          <button type="button" onclick="document.getElementById('new-folder-modal').classList.add('hidden')" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition shadow-xs">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SHARE MODAL -->
+  <div id="share-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-5">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-800 flex items-center">
+          <i class="fa-solid fa-share-nodes text-blue-500 mr-2"></i> Share File
+        </h3>
+        <button onclick="document.getElementById('share-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+        <div>
+          <div class="text-xs font-semibold text-slate-800">Public Link Access</div>
+          <div class="text-[11px] text-slate-400">Anyone with this link can view and download</div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="share-public-toggle" onchange="handleShareToggle()" class="sr-only peer">
+          <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:width-5 after:transition-all peer-checked:bg-blue-600"></div>
+        </label>
+      </div>
+
+      <div class="space-y-2">
+        <label class="block text-xs font-medium text-slate-600">Shareable Link</label>
+        <div class="flex items-center space-x-2">
+          <input type="text" id="share-link-input" readonly class="flex-1 px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 outline-none">
+          <button onclick="copyShareLink()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition shadow-xs">
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTEGRATED IN-APP PREVIEW MODAL -->
+  <div id="preview-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 z-50 hidden">
+    <!-- Modal Header -->
+    <div class="flex items-center justify-between pb-4 max-w-6xl w-full mx-auto">
+      <h3 id="preview-modal-title" class="text-base font-bold text-white truncate max-w-lg">File Preview</h3>
+      <button onclick="closePreviewModal()" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Modal Dynamic Content Container -->
+    <div id="preview-modal-content" class="flex-1 flex items-center justify-center max-w-6xl w-full mx-auto overflow-hidden">
+      <!-- Injected Video Player, Image, PDF, or Code Viewer -->
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
