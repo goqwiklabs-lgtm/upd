@@ -180,21 +180,43 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteFile = async (id: number) => {
-    await fetch('/api/files.php?action=delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'file', id }),
-    });
-    loadFolderContent(currentFolderId);
+    // Optimistic removal: remove immediately from screen
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+    try {
+      const res = await fetch('/api/files.php?action=delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'file', id }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to delete file');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      loadFolderContent(currentFolderId);
+    }
   };
 
   const handleDeleteFolder = async (id: number) => {
-    await fetch('/api/files.php?action=delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'folder', id }),
-    });
-    loadFolderContent(currentFolderId);
+    // Optimistic removal: remove immediately from screen
+    setFolders((prev) => prev.filter((f) => f.id !== id));
+    try {
+      const res = await fetch('/api/files.php?action=delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'folder', id }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to delete folder');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      loadFolderContent(currentFolderId);
+    }
   };
 
   const handleRenameFile = async (id: number, currentName: string) => {

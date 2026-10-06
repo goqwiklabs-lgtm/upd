@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Folder,
   FileVideo,
@@ -52,6 +52,21 @@ export const FileExplorer: React.FC<Props> = ({
   searchQuery,
 }) => {
   const [activeMenu, setActiveMenu] = useState<{ type: 'file' | 'folder'; id: number } | null>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.file-context-menu') && !target.closest('.file-menu-btn')) {
+        setActiveMenu(null);
+      }
+    };
+    window.addEventListener('click', handleOutsideClick);
+    window.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      window.removeEventListener('click', handleOutsideClick);
+      window.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
 
   const getFileIcon = (fileName: string, mime: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
@@ -212,18 +227,20 @@ export const FileExplorer: React.FC<Props> = ({
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveMenu(
-                                activeMenu?.id === file.id ? null : { type: 'file', id: file.id }
+                                activeMenu?.type === 'file' && activeMenu?.id === file.id
+                                  ? null
+                                  : { type: 'file', id: file.id }
                               );
                             }}
-                            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
+                            className="file-menu-btn text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
 
-                          {activeMenu?.id === file.id && (
+                          {activeMenu?.type === 'file' && activeMenu?.id === file.id && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-6 z-30 w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 text-xs text-slate-700 space-y-0.5"
+                              className="file-context-menu absolute right-0 top-6 z-30 w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 text-xs text-slate-700 space-y-0.5"
                             >
                               <button
                                 onClick={() => {

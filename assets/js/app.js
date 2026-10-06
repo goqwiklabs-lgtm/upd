@@ -246,7 +246,7 @@ function renderFileExplorer() {
                 <i class="fa-solid fa-folder text-amber-400 text-lg"></i>
                 <span class="text-sm font-medium text-slate-700 group-hover:text-blue-600 truncate">${escapeHtml(f.name)}</span>
               </div>
-              <button onclick="showContextMenu(event, 'folder', ${f.id}, '${escapeHtml(f.name)}')" class="text-slate-400 hover:text-slate-600 p-1 opacity-0 group-hover:opacity-100 transition">
+              <button onclick="showContextMenu(event, 'folder', ${f.id})" class="text-slate-400 hover:text-slate-600 p-1 opacity-0 group-hover:opacity-100 transition">
                 <i class="fa-solid fa-ellipsis-vertical"></i>
               </button>
             </div>
@@ -271,7 +271,7 @@ function renderFileExplorer() {
                   <div class="w-10 h-10 rounded-xl ${iconInfo.bg} ${iconInfo.color} flex items-center justify-center text-xl">
                     <i class="${iconInfo.icon}"></i>
                   </div>
-                  <button onclick="showContextMenu(event, 'file', ${file.id}, '${escapeHtml(file.name)}', '${file.share_token}', ${file.is_public})" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition">
+                  <button onclick="showContextMenu(event, 'file', ${file.id})" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition">
                     <i class="fa-solid fa-ellipsis-vertical"></i>
                   </button>
                 </div>
@@ -337,10 +337,14 @@ function setupEventListeners() {
     });
   }
 
-  // Close context menu on window click
-  window.addEventListener('click', () => {
-    const cm = document.getElementById('context-menu');
-    if (cm) cm.classList.add('hidden');
+  // Close context menu on window click or touch outside
+  ['click', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, (e) => {
+      const cm = document.getElementById('context-menu');
+      if (cm && !cm.contains(e.target) && !e.target.closest('button')) {
+        hideContextMenu();
+      }
+    });
   });
 }
 
@@ -643,19 +647,48 @@ function markUploadDockError(id, msg) {
 // --- CONTEXT MENU (DELETE, RENAME, MOVE, COPY, SHARE) ---
 let currentContextItem = null;
 
-function showContextMenu(e, type, id, name, shareToken = null, isPublic = 0) {
+function hideContextMenu() {
+  const menu = document.getElementById('context-menu');
+  if (menu) menu.classList.add('hidden');
+  currentContextItem = null;
+}
+
+function showContextMenu(e, type, id) {
   e.stopPropagation();
   e.preventDefault();
 
-  currentContextItem = { type, id, name, shareToken, isPublic };
+  let item = null;
+  if (type === 'folder') {
+    const folder = state.folders.find(f => f.id === id);
+    if (!folder) return;
+    item = { type: 'folder', id: folder.id, name: folder.name };
+  } else {
+    const file = state.files.find(f => f.id === id);
+    if (!file) return;
+    item = {
+      type: 'file',
+      id: file.id,
+      name: file.name,
+      shareToken: file.share_token,
+      isPublic: file.is_public,
+    };
+  }
+
+  currentContextItem = item;
   const menu = document.getElementById('context-menu');
-  
-  // Position menu at click coordinate
-  menu.style.left = `${Math.min(e.clientX, window.innerWidth - 200)}px`;
-  menu.style.top = `${Math.min(e.clientY, window.innerHeight - 260)}px`;
+  if (!menu) return;
+
+  // Position menu safely at click coordinates
+  const menuWidth = 190;
+  const menuHeight = 240;
+  const x = Math.min(e.clientX, window.innerWidth - menuWidth - 10);
+  const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
+
+  menu.style.left = `${Math.max(10, x)}px`;
+  menu.style.top = `${Math.max(10, y)}px`;
   menu.classList.remove('hidden');
 
-  // Toggle file-specific actions (like copy, share, download)
+  // Toggle file-specific actions
   const fileActions = document.querySelectorAll('.ctx-file-only');
   fileActions.forEach(el => {
     if (type === 'file') el.classList.remove('hidden');
@@ -665,23 +698,27 @@ function showContextMenu(e, type, id, name, shareToken = null, isPublic = 0) {
 
 async function ctxOpen() {
   if (!currentContextItem) return;
-  if (currentContextItem.type === 'folder') {
-    loadFiles(currentContextItem.id);
+  const target = { ...currentContextItem };
+  hideContextMenu();
+  if (target.type === 'folder') {
+    loadFiles(target.id);
   } else {
-    openFilePreview(currentContextItem.id);
+    openFilePreview(target.id);
   }
 }
 
 function ctxRename() {
   if (!currentContextItem) return;
-  const newName = prompt('Enter new name:', currentContextItem.name);
-  if (newName && newName.trim() && newName !== currentContextItem.name) {
+  const target = { ...currentContextItem };
+  hideContextMenu();
+  const newName = prompt('Enter new name:', target.name);
+  if (newName && newName.trim() && newName !== target.name) {
     fetch('api/files.php?action=rename', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: currentContextItem.type,
-        id: currentContextItem.id,
+        type: target.type,
+        id: target.id,
         new_name: newName.trim(),
       }),
     }).then(() => loadFiles(state.currentFolderId));
@@ -690,39 +727,64 @@ function ctxRename() {
 
 async function ctxDelete() {
   if (!currentContextItem) return;
-  if (!confirm(`Are you sure you want to delete "${currentContextItem.name}"?`)) return;
+  const target = { ...currentContextItem };
+  hideContextMenu();
 
-  await fetch('api/files.php?action=delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: currentContextItem.type,
-      id: currentContextItem.id,
-    }),
-  });
-  loadFiles(state.currentFolderId);
+  if (!confirm(`Are you sure you want to delete "${target.name}"?`)) return;
+
+  // Optimistic UI update: immediately remove from screen so user sees instant deletion
+  if (target.type === 'file') {
+    state.files = state.files.filter(f => f.id !== target.id);
+  } else {
+    state.folders = state.folders.filter(f => f.id !== target.id);
+  }
+  renderFileExplorer();
+
+  try {
+    const res = await fetch('api/files.php?action=delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: target.type,
+        id: target.id,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.error || 'Failed to delete file');
+    }
+  } catch (err) {
+    console.error('Delete error:', err);
+  } finally {
+    loadFiles(state.currentFolderId);
+  }
 }
 
 async function ctxCopy() {
   if (!currentContextItem || currentContextItem.type !== 'file') return;
+  const target = { ...currentContextItem };
+  hideContextMenu();
   await fetch('api/files.php?action=copy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ file_id: currentContextItem.id }),
+    body: JSON.stringify({ file_id: target.id }),
   });
   loadFiles(state.currentFolderId);
 }
 
 function ctxShare() {
   if (!currentContextItem || currentContextItem.type !== 'file') return;
+  const target = { ...currentContextItem };
+  hideContextMenu();
   const modal = document.getElementById('share-modal');
   const linkInput = document.getElementById('share-link-input');
   const toggle = document.getElementById('share-public-toggle');
   
-  const shareUrl = `${window.location.origin}/share.php?token=${currentContextItem.shareToken}`;
+  const shareUrl = `${window.location.origin}/share.php?token=${target.shareToken}`;
   linkInput.value = shareUrl;
-  toggle.checked = !!currentContextItem.isPublic;
+  toggle.checked = !!target.isPublic;
 
+  currentContextItem = target; // preserve for handleShareToggle
   modal.classList.remove('hidden');
 }
 

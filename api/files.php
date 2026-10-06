@@ -34,10 +34,10 @@ if ($action === 'list') {
 
     // Get files
     if ($folderId === null) {
-        $stmtFiles = $pdo->prepare("SELECT * FROM files WHERE user_id = ? AND folder_id IS NULL ORDER BY created_at DESC");
+        $stmtFiles = $pdo->prepare("SELECT * FROM files WHERE user_id = ? AND folder_id IS NULL ORDER BY created_at DESC, id DESC");
         $stmtFiles->execute([$userId]);
     } else {
-        $stmtFiles = $pdo->prepare("SELECT * FROM files WHERE user_id = ? AND folder_id = ? ORDER BY created_at DESC");
+        $stmtFiles = $pdo->prepare("SELECT * FROM files WHERE user_id = ? AND folder_id = ? ORDER BY created_at DESC, id DESC");
         $stmtFiles->execute([$userId, $folderId]);
     }
     $files = $stmtFiles->fetchAll();
@@ -151,38 +151,93 @@ if ($action === 'delete') {
 
     if ($type === 'folder') {
         // Delete all files inside recursively
-        $filesInside = $pdo->prepare("SELECT f.*, g.* FROM files f JOIN google_accounts g ON f.google_account_id = g.id WHERE f.folder_id = ? AND f.user_id = ?");
+        $filesInside = $pdo->prepare("
+            SELECT f.id as file_id, f.size_bytes, f.google_file_id, f.google_account_id,
+                   g.id as account_id, g.account_email, g.client_id, g.client_secret, g.refresh_token, g.access_token, g.token_expires_at
+            FROM files f 
+            JOIN google_accounts g ON f.google_account_id = g.id 
+            WHERE f.folder_id = ? AND f.user_id = ?
+        ");
         $filesInside->execute([$id, $userId]);
-        while ($f = $filesInside->fetch()) {
-            GoogleDriveManager::deleteGoogleFile($f, $pdo, $f['google_file_id']);
-            $pdo->prepare("UPDATE google_accounts SET used_storage_bytes = GREATEST(0, used_storage_bytes - ?) WHERE id = ?")
-                ->execute([$f['size_bytes'], $f['google_account_id']]);
+        $files = $filesInside->fetchAll();
+
+        foreach ($files as $f) {
+            $accountData = [
+                'id' => $f['account_id'],
+                'account_email' => $f['account_email'],
+                'client_id' => $f['client_id'],
+                'client_secret' => $f['client_secret'],
+                'refresh_token' => $f['refresh_token'],
+                'access_token' => $f['access_token'],
+                'token_expires_at' => $f['token_expires_at'],
+            ];
+            try {
+                GoogleDriveManager::deleteGoogleFile($accountData, $pdo, $f['google_file_id']);
+            } catch (Exception $e) {
+                // Ignore remote deletion errors during batch delete
+            }
+            $pdo->prepare("
+                UPDATE google_accounts 
+                SET used_storage_bytes = CASE 
+                    WHEN used_storage_bytes > ? THEN used_storage_bytes - ? 
+                    ELSE 0 
+                END 
+                WHERE id = ?
+            ")->execute([$f['size_bytes'], $f['size_bytes'], $f['google_account_id']]);
         }
+        $pdo->prepare("DELETE FROM files WHERE folder_id = ? AND user_id = ?")->execute([$id, $userId]);
         $pdo->prepare("DELETE FROM folders WHERE id = ? AND user_id = ?")->execute([$id, $userId]);
         echo json_encode(['success' => true]);
         exit;
     }
 
-    // Delete file
-    $stmt = $pdo->prepare("SELECT f.*, g.* FROM files f JOIN google_accounts g ON f.google_account_id = g.id WHERE f.id = ? AND f.user_id = ?");
+    // Delete single file
+    $stmt = $pdo->prepare("
+        SELECT f.id as file_id, f.user_id, f.size_bytes, f.google_file_id, f.google_account_id,
+               g.id as account_id, g.account_email, g.client_id, g.client_secret, g.refresh_token, g.access_token, g.token_expires_at
+        FROM files f 
+        JOIN google_accounts g ON f.google_account_id = g.id 
+        WHERE f.id = ? AND f.user_id = ?
+    ");
     $stmt->execute([$id, $userId]);
     $file = $stmt->fetch();
 
     if (!$file) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'File not found.']);
+        // If not found in JOIN, clean up if record exists in files
+        $pdo->prepare("DELETE FROM files WHERE id = ? AND user_id = ?")->execute([$id, $userId]);
+        echo json_encode(['success' => true, 'cleaned' => true]);
         exit;
     }
 
-    // Delete in Google Drive
-    GoogleDriveManager::deleteGoogleFile($file, $pdo, $file['google_file_id']);
+    $accountData = [
+        'id' => $file['account_id'],
+        'account_email' => $file['account_email'],
+        'client_id' => $file['client_id'],
+        'client_secret' => $file['client_secret'],
+        'refresh_token' => $file['refresh_token'],
+        'access_token' => $file['access_token'],
+        'token_expires_at' => $file['token_expires_at'],
+    ];
 
-    // Reduce storage counter
-    $pdo->prepare("UPDATE google_accounts SET used_storage_bytes = GREATEST(0, used_storage_bytes - ?) WHERE id = ?")
-        ->execute([$file['size_bytes'], $file['google_account_id']]);
+    // Delete in Google Drive (silently handled if already 404 in Drive)
+    try {
+        GoogleDriveManager::deleteGoogleFile($accountData, $pdo, $file['google_file_id']);
+    } catch (Exception $e) {
+        error_log("Google delete warning: " . $e->getMessage());
+    }
+
+    // Reduce storage counter using universal ANSI SQL
+    $pdo->prepare("
+        UPDATE google_accounts 
+        SET used_storage_bytes = CASE 
+            WHEN used_storage_bytes > ? THEN used_storage_bytes - ? 
+            ELSE 0 
+        END 
+        WHERE id = ?
+    ")->execute([$file['size_bytes'], $file['size_bytes'], $file['google_account_id']]);
 
     // Delete in DB
-    $pdo->prepare("DELETE FROM files WHERE id = ?")->execute([$id]);
+    $pdo->prepare("DELETE FROM files WHERE id = ? AND user_id = ?")->execute([$id, $userId]);
 
     echo json_encode(['success' => true]);
     exit;
