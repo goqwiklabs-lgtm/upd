@@ -37,6 +37,9 @@ if (!$file) {
     die('File not found or access denied.');
 }
 
+// Release session lock immediately so parallel range requests never block
+session_write_close();
+
 // Get valid Google access token
 $accessToken = GoogleDriveManager::getValidAccessToken($file, $pdo);
 if (!$accessToken) {
@@ -91,11 +94,14 @@ curl_setopt_array($ch, [
     CURLOPT_HTTPHEADER => $headers,
     CURLOPT_RETURNTRANSFER => false, // stream directly to client
     CURLOPT_WRITEFUNCTION => function($ch, $chunk) {
+        if (connection_aborted()) {
+            return 0; // Terminate Google download immediately if client closed or seeked
+        }
         echo $chunk;
         flush();
         return strlen($chunk);
     },
-    CURLOPT_BUFFERSIZE => 1024 * 1024, // 1 MB buffer for high streaming throughput
+    CURLOPT_BUFFERSIZE => 256 * 1024, // 256 KB buffer for instant initial chunk playback
     CURLOPT_TCP_NODELAY => 1,
     CURLOPT_TIMEOUT => 600,
 ]);
