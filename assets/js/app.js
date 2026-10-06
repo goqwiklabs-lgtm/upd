@@ -1071,3 +1071,26 @@ function getFileIcon(filename, mime) {
   }
   return { icon: 'fa-regular fa-file', color: 'text-slate-600', bg: 'bg-slate-50' };
 }
+
+// --- AIR-GAPPED OPTICAL TRANSFER (QR FILES) ---
+function openQRFilesModal() {
+  const modal = document.getElementById('qr-files-modal');
+  const iframe = document.getElementById('qr-files-iframe');
+  if (modal && iframe) {
+    if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('index.html')) {
+      iframe.src = '/dist/index.html#qr';
+    } else {
+      // Trigger hash refresh
+      iframe.contentWindow?.postMessage({ action: 'open_qr' }, '*');
+    }
+    modal.classList.remove('hidden');
+  }
+}
+
+function closeQRFilesModal() {
+  const modal = document.getElementById('qr-files-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+

@@ -38,6 +38,12 @@
 
     <!-- User Action Controls -->
     <div class="flex items-center space-x-3">
+      <!-- QR Files Air-Gapped Optical Link -->
+      <button onclick="openQRFilesModal()" class="px-3.5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition shadow-sm shadow-cyan-500/20" title="Air-Gapped Optical Data Transfer (100% Offline)">
+        <i class="fa-solid fa-qrcode"></i>
+        <span>QR Files</span>
+      </button>
+
       <a id="admin-panel-btn" href="admin/" class="hidden px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 items-center space-x-1.5 transition">
         <i class="fa-solid fa-shield-halved"></i>
         <span>Admin Panel</span>
@@ -89,6 +95,13 @@
           <button class="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition">
             <i class="fa-solid fa-share-nodes text-slate-400"></i>
             <span>Shared Links</span>
+          </button>
+          <button onclick="openQRFilesModal()" class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-700 hover:bg-cyan-50 hover:text-cyan-700 rounded-xl transition group">
+            <div class="flex items-center space-x-3">
+              <i class="fa-solid fa-qrcode text-cyan-600 group-hover:scale-110 transition-transform"></i>
+              <span>QR Files</span>
+            </div>
+            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800 uppercase tracking-wide">Offline</span>
           </button>
         </nav>
       </div>
@@ -341,6 +354,18 @@
     <!-- Modal Dynamic Content Container -->
     <div id="preview-modal-content" class="flex-1 flex items-center justify-center max-w-6xl w-full mx-auto overflow-hidden">
       <!-- Injected Video Player, Image, PDF, or Code Viewer -->
+    </div>
+  </div>
+
+  <!-- QR FILES AIR-GAPPED OPTICAL MODAL -->
+  <div id="qr-files-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 z-50 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden relative border border-slate-700/50">
+      <div class="absolute top-4 right-4 z-50">
+        <button onclick="closeQRFilesModal()" class="w-9 h-9 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center shadow-lg transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <iframe id="qr-files-iframe" src="" class="w-full h-full border-0 rounded-3xl"></iframe>
     </div>
   </div>
 

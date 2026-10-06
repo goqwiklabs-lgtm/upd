@@ -9,6 +9,7 @@ import {
   HardDrive,
   Clock,
   Share2,
+  QrCode,
 } from 'lucide-react';
 import type { User, FolderItem, FileItem, BreadcrumbItem, UploadItem } from './types';
 import { BasketballDropzone } from './components/BasketballDropzone';
@@ -16,12 +17,35 @@ import { FileExplorer } from './components/FileExplorer';
 import { PreviewModal } from './components/PreviewModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { AuthModal } from './components/AuthModal';
+import { QRFilesModal } from './components/QRFilesModal';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isQROpen, setIsQROpen] = useState<boolean>(() => {
+    return window.location.hash === '#qr' || window.location.search.includes('tab=qr');
+  });
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#qr' || window.location.hash.includes('qr')) {
+        setIsQROpen(true);
+      }
+    };
+    const handleMsg = (e: MessageEvent) => {
+      if (e.data?.action === 'open_qr') {
+        setIsQROpen(true);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    window.addEventListener('message', handleMsg);
+    return () => {
+      window.removeEventListener('hashchange', handleHash);
+      window.removeEventListener('message', handleMsg);
+    };
+  }, []);
 
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -284,6 +308,15 @@ export const App: React.FC = () => {
 
         {/* Actions & User */}
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setIsQROpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition shadow-sm shadow-cyan-500/20"
+            title="Air-Gapped Optical Data Transfer (100% Offline)"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>QR Files</span>
+          </button>
+
           {user?.role === 'admin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
@@ -364,6 +397,18 @@ export const App: React.FC = () => {
                 <Share2 className="w-4 h-4 text-slate-400" />
                 <span>Shared Links</span>
               </button>
+              <button
+                onClick={() => setIsQROpen(true)}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-slate-700 hover:bg-cyan-50 hover:text-cyan-700 rounded-xl transition group"
+              >
+                <div className="flex items-center space-x-3">
+                  <QrCode className="w-4 h-4 text-cyan-600 group-hover:scale-110 transition-transform" />
+                  <span className="font-semibold">QR Files</span>
+                </div>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800 uppercase tracking-wide">
+                  Offline
+                </span>
+              </button>
             </nav>
           </div>
 
@@ -412,6 +457,7 @@ export const App: React.FC = () => {
       {isAdminOpen && (
         <AdminPanelModal onClose={() => setIsAdminOpen(false)} />
       )}
+      <QRFilesModal isOpen={isQROpen} onClose={() => setIsQROpen(false)} />
       {isAuthOpen && (
         <AuthModal
           onSuccess={(u) => {
