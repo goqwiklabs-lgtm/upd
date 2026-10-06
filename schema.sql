@@ -52,7 +52,11 @@ CREATE TABLE IF NOT EXISTS `files` (
   FOREIGN KEY (`google_account_id`) REFERENCES `google_accounts`(`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert default admin account (Username: admin, Password: admin123)
--- Hash generated via password_hash('admin123', PASSWORD_BCRYPT)
+CREATE TABLE IF NOT EXISTS `settings` (
+  `key_name` VARCHAR(50) PRIMARY KEY,
+  `key_value` TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Insert default admin account (Email: omkumar.working@gmail.com, Username: omkumar, Password: Q0gng04bk3)
 INSERT IGNORE INTO `users` (`id`, `username`, `email`, `password_hash`, `role`)
-VALUES (1, 'admin', 'admin@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin');
+VALUES (1, 'omkumar', 'omkumar.working@gmail.com', '$2y$12$2bx9dFXpU8Agv0LIsKot7.sJy6QweLZbzFs0xXs3t/GoyXoAn4r1q', 'admin');

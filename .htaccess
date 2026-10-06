@@ -1,0 +1,8 @@
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+
+# Redirect /admin to admin/index.php
+RewriteRule ^admin/?$ admin/index.php [L,QSA]
+
+</IfModule>

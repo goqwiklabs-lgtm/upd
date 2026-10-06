@@ -49,11 +49,191 @@ if ($action === 'accounts_list') {
         ORDER BY g.id ASC
     ");
     $accounts = $stmt->fetchAll();
-    echo json_encode(['success' => true, 'accounts' => $accounts]);
+
+    // Get master settings
+    $settingsRows = $pdo->query("SELECT * FROM settings")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $masterClientId = $settingsRows['google_client_id'] ?? '';
+    $masterClientSecret = $settingsRows['google_client_secret'] ?? '';
+
+    echo json_encode([
+        'success' => true, 
+        'accounts' => $accounts,
+        'master_settings' => [
+            'client_id' => $masterClientId,
+            'has_client_secret' => !empty($masterClientSecret),
+        ]
+    ]);
     exit;
 }
 
-// 3. ADD GOOGLE ACCOUNT
+// 2b. SAVE MASTER OAUTH CREDENTIALS
+if ($action === 'save_master_settings') {
+    $clientId = trim($data['client_id'] ?? '');
+    $clientSecret = trim($data['client_secret'] ?? '');
+
+    if (!empty($clientId)) {
+        $pdo->prepare("INSERT OR REPLACE INTO settings (key_name, key_value) VALUES ('google_client_id', ?)")->execute([$clientId]);
+    }
+    if (!empty($clientSecret)) {
+        $pdo->prepare("INSERT OR REPLACE INTO settings (key_name, key_value) VALUES ('google_client_secret', ?)")->execute([$clientSecret]);
+    }
+
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// 3. SMART ONE-KEY ACCOUNT ADD
+if ($action === 'account_add_key') {
+    $keyInput = trim($data['key'] ?? $data['key_data'] ?? '');
+    if (empty($keyInput)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Please paste a Google Drive Key, Refresh Token, or Credentials JSON.']);
+        exit;
+    }
+
+    // Fetch master client credentials if stored
+    $settingsRows = $pdo->query("SELECT * FROM settings")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $masterClientId = $settingsRows['google_client_id'] ?? '';
+    $masterClientSecret = $settingsRows['google_client_secret'] ?? '';
+
+    $email = '';
+    $clientId = $masterClientId;
+    $clientSecret = $masterClientSecret;
+    $refreshToken = '';
+
+    // Check if JSON
+    $decoded = json_decode($keyInput, true);
+    if (is_array($decoded)) {
+        if (!empty($decoded['web'])) {
+            $clientId = $decoded['web']['client_id'] ?? $clientId;
+            $clientSecret = $decoded['web']['client_secret'] ?? $clientSecret;
+            $refreshToken = $decoded['web']['refresh_token'] ?? $refreshToken;
+        } elseif (!empty($decoded['refresh_token'])) {
+            $refreshToken = $decoded['refresh_token'];
+            $clientId = $decoded['client_id'] ?? $clientId;
+            $clientSecret = $decoded['client_secret'] ?? $clientSecret;
+            $email = $decoded['email'] ?? $email;
+        } elseif (!empty($decoded['type']) && $decoded['type'] === 'service_account') {
+            $email = $decoded['client_email'] ?? '';
+            $clientId = $decoded['client_id'] ?? 'service_account';
+            $clientSecret = 'service_account';
+            $refreshToken = $keyInput; // store full json
+        }
+    } else {
+        // String format: check delimiter '|' or raw token
+        if (strpos($keyInput, '|') !== false) {
+            $parts = explode('|', $keyInput);
+            if (count($parts) >= 4) {
+                $email = trim($parts[0]);
+                $clientId = trim($parts[1]);
+                $clientSecret = trim($parts[2]);
+                $refreshToken = trim($parts[3]);
+            } elseif (count($parts) === 2) {
+                $email = trim($parts[0]);
+                $refreshToken = trim($parts[1]);
+            }
+        } else {
+            // Raw Refresh Token (e.g. 1//04...)
+            $refreshToken = $keyInput;
+        }
+    }
+
+    if (empty($clientId) || empty($clientSecret)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Google Client ID and Client Secret are not configured yet. Please enter them once under "OAuth Setup" or paste the full credentials JSON.'
+        ]);
+        exit;
+    }
+
+    if (empty($refreshToken)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'No valid Refresh Token could be found in the pasted key.']);
+        exit;
+    }
+
+    // Automatically verify token and fetch user email + storage from Google
+    $tempAccount = [
+        'id' => 0,
+        'account_email' => $email ?: 'detecting@gmail.com',
+        'client_id' => $clientId,
+        'client_secret' => $clientSecret,
+        'refresh_token' => $refreshToken,
+    ];
+
+    $accessToken = GoogleDriveManager::refreshAccessToken($tempAccount, $pdo);
+    if (!$accessToken) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Failed to connect with Google using this key. Please verify the Client ID, Secret, and Refresh Token.'
+        ]);
+        exit;
+    }
+
+    // Query Google Drive for user email and quota
+    $ch = curl_init('https://www.googleapis.com/drive/v3/about?fields=user,storageQuota');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken],
+        CURLOPT_TIMEOUT => 15,
+    ]);
+    $aboutRes = curl_exec($ch);
+    curl_close($ch);
+    $aboutData = json_decode($aboutRes, true);
+
+    $detectedEmail = $aboutData['user']['emailAddress'] ?? $email;
+    $usage = (int)($aboutData['storageQuota']['usageInDrive'] ?? $aboutData['storageQuota']['usage'] ?? 0);
+
+    if (empty($detectedEmail)) {
+        $detectedEmail = 'storage_' . time() . '@gmail.com';
+    }
+
+    // Default limit: 13 GB (13,958,643,712 bytes)
+    $limitBytes = 13 * 1024 * 1024 * 1024;
+
+    // Check if account already exists
+    $existing = $pdo->prepare("SELECT id FROM google_accounts WHERE account_email = ?");
+    $existing->execute([$detectedEmail]);
+    $accRow = $existing->fetch();
+
+    if ($accRow) {
+        $upd = $pdo->prepare("
+            UPDATE google_accounts 
+            SET client_id = ?, client_secret = ?, refresh_token = ?, access_token = ?, token_expires_at = ?, used_storage_bytes = ?, is_active = 1
+            WHERE id = ?
+        ");
+        $upd->execute([$clientId, $clientSecret, $refreshToken, $accessToken, time() + 3500, $usage, $accRow['id']]);
+        $newId = $accRow['id'];
+    } else {
+        $ins = $pdo->prepare("
+            INSERT INTO google_accounts (account_email, client_id, client_secret, refresh_token, access_token, token_expires_at, used_storage_bytes, storage_limit_bytes, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ");
+        $ins->execute([
+            $detectedEmail,
+            $clientId,
+            $clientSecret,
+            $refreshToken,
+            $accessToken,
+            time() + 3500,
+            $usage,
+            $limitBytes
+        ]);
+        $newId = $pdo->lastInsertId();
+    }
+
+    echo json_encode([
+        'success' => true,
+        'account_id' => $newId,
+        'account_email' => $detectedEmail,
+        'used_storage_bytes' => $usage,
+    ]);
+    exit;
+}
+
+// 3b. ADD GOOGLE ACCOUNT (MANUAL FORM)
 if ($action === 'account_add') {
     $email = trim(strtolower($data['account_email'] ?? ''));
     $clientId = trim($data['client_id'] ?? '');
@@ -103,7 +283,6 @@ if ($action === 'account_add') {
     ]);
     $newId = $pdo->lastInsertId();
 
-    // Sync actual live usage from Google Drive
     $tempAccount['id'] = $newId;
     $tempAccount['access_token'] = $accessToken;
     $tempAccount['token_expires_at'] = time() + 3500;
