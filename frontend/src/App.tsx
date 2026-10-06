@@ -121,11 +121,11 @@ export const App: React.FC = () => {
             });
           } catch (netErr) {
             // Attempt 2: If browser blocks cross-origin PUT (CORS), relay chunk through server
-            putRes = await fetch('/api/upload_chunk.php', {
+            const relayUrl = `/api/upload_chunk.php?upload_url=${encodeURIComponent(upload_url)}`;
+            putRes = await fetch(relayUrl, {
               method: 'POST',
               headers: {
                 'Content-Range': contentRange,
-                'X-Upload-Url': upload_url,
               },
               body: chunk,
             });

@@ -530,11 +530,11 @@ async function startDirectUpload(file) {
         });
       } catch (corsErr) {
         // Attempt 2: Relay chunk through server if browser blocks CORS
-        response = await fetch('api/upload_chunk.php', {
+        const relayUrl = `api/upload_chunk.php?upload_url=${encodeURIComponent(uploadUrl)}`;
+        response = await fetch(relayUrl, {
           method: 'POST',
           headers: {
             'Content-Range': contentRange,
-            'X-Upload-Url': uploadUrl,
           },
           body: chunk,
         });
@@ -794,27 +794,40 @@ function openFilePreview(fileId) {
   const mime = file.mime_type || '';
   const streamUrl = `stream.php?id=${file.id}`;
 
-  if (mime.startsWith('video/')) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+  const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+  const codeExts  = ['txt', 'json', 'html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'py', 'php', 'md', 'csv', 'xml', 'sql', 'sh', 'yaml', 'yml', 'c', 'cpp', 'java', 'log'];
+
+  const isVideo = videoExts.includes(ext) || mime.startsWith('video/');
+  const isImage = imageExts.includes(ext) || mime.startsWith('image/');
+  const isAudio = audioExts.includes(ext) || mime.startsWith('audio/');
+  const isPdf   = ext === 'pdf' || mime === 'application/pdf';
+  const isHtml  = ['html', 'htm'].includes(ext);
+  const isCode  = codeExts.includes(ext) || mime.startsWith('text/');
+
+  if (isVideo) {
     content.innerHTML = `
-      <video controls autoplay class="w-full max-h-[75vh] rounded-lg shadow-lg bg-black" preload="metadata">
+      <video controls autoplay class="w-full max-h-[75vh] rounded-2xl shadow-2xl bg-black" preload="metadata">
         <source src="${streamUrl}" type="${mime}">
         Your browser does not support video playback.
       </video>
     `;
-  } else if (mime.startsWith('image/')) {
+  } else if (isImage) {
     content.innerHTML = `
       <div class="flex items-center justify-center p-4">
-        <img src="${streamUrl}" alt="${escapeHtml(file.name)}" class="max-h-[75vh] max-w-full rounded-lg shadow-lg object-contain">
+        <img src="${streamUrl}" alt="${escapeHtml(file.name)}" class="max-h-[75vh] max-w-full rounded-2xl shadow-2xl object-contain">
       </div>
     `;
-  } else if (mime === 'application/pdf') {
+  } else if (isPdf) {
     content.innerHTML = `
-      <iframe src="${streamUrl}" class="w-full h-[75vh] rounded-lg border-0"></iframe>
+      <iframe src="${streamUrl}" class="w-full h-[75vh] rounded-2xl border-0 shadow-2xl"></iframe>
     `;
-  } else if (mime.startsWith('audio/')) {
+  } else if (isAudio) {
     content.innerHTML = `
-      <div class="p-12 text-center w-full max-w-md mx-auto">
-        <div class="w-20 h-20 mx-auto rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-3xl mb-4">
+      <div class="p-12 text-center w-full max-w-md mx-auto space-y-4">
+        <div class="w-24 h-24 mx-auto rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-4xl mb-4">
           <i class="fa-solid fa-music"></i>
         </div>
         <audio controls autoplay class="w-full">
@@ -822,19 +835,34 @@ function openFilePreview(fileId) {
         </audio>
       </div>
     `;
-  } else if (mime.startsWith('text/') || mime.includes('json') || mime.includes('javascript') || mime.includes('php')) {
+  } else if (isHtml) {
+    content.innerHTML = `
+      <div class="w-full h-[75vh] bg-white rounded-2xl overflow-hidden shadow-2xl">
+        <iframe src="${streamUrl}" class="w-full h-full border-0"></iframe>
+      </div>
+    `;
+  } else if (isCode) {
+    content.innerHTML = `<div class="p-8 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading code...</div>`;
     fetch(streamUrl)
       .then(r => r.text())
       .then(text => {
         content.innerHTML = `
-          <pre class="bg-slate-900 text-slate-100 p-6 rounded-xl font-mono text-xs overflow-auto max-h-[70vh] whitespace-pre-wrap">${escapeHtml(text)}</pre>
+          <div class="w-full max-h-[75vh] bg-slate-900 text-slate-100 p-6 rounded-2xl font-mono text-xs overflow-auto whitespace-pre-wrap shadow-2xl border border-slate-800">
+            <div class="flex justify-end pb-3 mb-3 border-b border-slate-800">
+              <button onclick="navigator.clipboard.writeText(this.closest('.bg-slate-900').querySelector('pre').innerText); alert('Copied code to clipboard!');" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition">
+                <i class="fa-solid fa-copy mr-1"></i> Copy
+              </button>
+            </div>
+            <pre class="m-0">${escapeHtml(text)}</pre>
+          </div>
         `;
       });
   } else {
     content.innerHTML = `
-      <div class="text-center p-12">
+      <div class="text-center p-12 space-y-3">
         <i class="fa-regular fa-file text-5xl text-slate-400 mb-4"></i>
-        <p class="text-slate-600 mb-4">No preview available for this file type.</p>
+        <p class="text-slate-600 font-semibold mb-2">${escapeHtml(file.name)}</p>
+        <p class="text-xs text-slate-400 mb-4">No direct in-browser preview available for this format.</p>
         <a href="${streamUrl}&download=1" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition inline-flex items-center space-x-2">
           <i class="fa-solid fa-download"></i>
           <span>Download File</span>

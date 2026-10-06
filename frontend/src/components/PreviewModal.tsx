@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
+import { X, Download, FileText, ZoomIn, ZoomOut, RotateCw, Copy, Check, Eye, Code } from 'lucide-react';
 import type { FileItem } from '../types';
 
 interface Props {
@@ -11,42 +11,93 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [textContent, setTextContent] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [htmlView, setHtmlView] = useState<'preview' | 'code'>('preview');
+
+  const ext = file?.name.split('.').pop()?.toLowerCase() || '';
+  const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v'];
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+  const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+  const codeExts  = ['txt', 'json', 'html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'py', 'php', 'md', 'csv', 'xml', 'sql', 'sh', 'yaml', 'yml', 'c', 'cpp', 'java', 'log'];
+
+  const isVideo = (file?.mime_type.startsWith('video/') || videoExts.includes(ext)) ?? false;
+  const isImage = (file?.mime_type.startsWith('image/') || imageExts.includes(ext)) ?? false;
+  const isPdf = (file?.mime_type === 'application/pdf' || ext === 'pdf') ?? false;
+  const isAudio = (file?.mime_type.startsWith('audio/') || audioExts.includes(ext)) ?? false;
+  const isCode = (file?.mime_type.startsWith('text/') || codeExts.includes(ext)) ?? false;
+  const isHtml = ['html', 'htm'].includes(ext);
 
   useEffect(() => {
     setZoom(1);
     setRotation(0);
     setTextContent(null);
+    setCopied(false);
+    setHtmlView('preview');
 
-    if (file && (file.mime_type.startsWith('text/') || file.name.endsWith('.json') || file.name.endsWith('.js') || file.name.endsWith('.py') || file.name.endsWith('.php'))) {
+    if (file && isCode) {
       fetch(`stream.php?id=${file.id}`)
         .then((res) => res.text())
         .then((text) => setTextContent(text))
         .catch(() => setTextContent('Error loading file preview.'));
     }
-  }, [file]);
+  }, [file, isCode]);
 
   if (!file) return null;
 
   const streamUrl = `stream.php?id=${file.id}`;
-  const isVideo = file.mime_type.startsWith('video/') || ['mp4', 'mkv', 'webm', 'mov'].includes(file.name.split('.').pop() || '');
-  const isImage = file.mime_type.startsWith('image/');
-  const isPdf = file.mime_type === 'application/pdf' || file.name.endsWith('.pdf');
-  const isAudio = file.mime_type.startsWith('audio/');
+
+  const copyToClipboard = () => {
+    if (textContent) {
+      navigator.clipboard.writeText(textContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 z-50 animate-in fade-in duration-200">
       {/* Top Header */}
-      <div className="flex items-center justify-between max-w-6xl w-full mx-auto pb-4 border-b border-slate-800">
+      <div className="flex items-center justify-between max-w-6xl w-full mx-auto pb-4 border-b border-slate-800 gap-3">
         <div className="flex items-center space-x-3 truncate">
-          <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
-            <FileText className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0">
+            <FileText className="w-5 h-5" />
           </div>
-          <h3 className="text-base font-bold text-white truncate max-w-md" title={file.name}>
-            {file.name}
-          </h3>
+          <div className="truncate">
+            <h3 className="text-base font-bold text-white truncate max-w-md" title={file.name}>
+              {file.name}
+            </h3>
+            <span className="text-[11px] text-slate-400">
+              {(file.size_bytes / (1024 * 1024)).toFixed(1)} MB
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* HTML Toggle View */}
+          {isHtml && (
+            <div className="flex items-center bg-slate-800 rounded-xl p-1 text-xs mr-2">
+              <button
+                onClick={() => setHtmlView('preview')}
+                className={`px-3 py-1 rounded-lg font-semibold flex items-center space-x-1.5 transition ${
+                  htmlView === 'preview' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Web Preview</span>
+              </button>
+              <button
+                onClick={() => setHtmlView('code')}
+                className={`px-3 py-1 rounded-lg font-semibold flex items-center space-x-1.5 transition ${
+                  htmlView === 'code' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>Source Code</span>
+              </button>
+            </div>
+          )}
+
+          {/* Image Zoom & Rotate Controls */}
           {isImage && (
             <div className="flex items-center space-x-1 mr-2 bg-slate-800/80 rounded-xl p-1 text-slate-300">
               <button
@@ -74,10 +125,21 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
             </div>
           )}
 
+          {/* Copy Code Button */}
+          {isCode && !isHtml && textContent && (
+            <button
+              onClick={copyToClipboard}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition flex items-center space-x-1.5"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          )}
+
           <a
             href={`${streamUrl}&download=1`}
             download={file.name}
-            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 shadow-md shadow-blue-500/20"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 shadow-md shadow-blue-500/20"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download</span>
@@ -134,7 +196,11 @@ export const PreviewModal: React.FC<Props> = ({ file, onClose }) => {
               <source src={streamUrl} type={file.mime_type} />
             </audio>
           </div>
-        ) : textContent !== null ? (
+        ) : isHtml && htmlView === 'preview' ? (
+          <div className="w-full h-[75vh] bg-white rounded-2xl overflow-hidden shadow-2xl">
+            <iframe src={streamUrl} title={file.name} className="w-full h-full border-0"></iframe>
+          </div>
+        ) : isCode && textContent !== null ? (
           <div className="w-full max-h-[75vh] bg-slate-900 border border-slate-800 rounded-2xl p-6 overflow-auto text-slate-100 font-mono text-xs whitespace-pre-wrap shadow-2xl">
             {textContent}
           </div>
