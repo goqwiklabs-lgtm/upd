@@ -50,8 +50,17 @@ if (!$account) {
     exit;
 }
 
-// 2. Create Google Drive Resumable Upload Session
-$uploadUrl = GoogleDriveManager::createResumableUploadSession($account, $pdo, $fileName, $mimeType, $fileSize);
+// 2. Extract Client Origin for Google Drive CORS authorization
+$clientOrigin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? ($data['origin'] ?? '');
+if ($clientOrigin) {
+    $parsed = parse_url($clientOrigin);
+    if (!empty($parsed['scheme']) && !empty($parsed['host'])) {
+        $clientOrigin = $parsed['scheme'] . '://' . $parsed['host'] . (!empty($parsed['port']) ? ':' . $parsed['port'] : '');
+    }
+}
+
+// 3. Create Google Drive Resumable Upload Session
+$uploadUrl = GoogleDriveManager::createResumableUploadSession($account, $pdo, $fileName, $mimeType, $fileSize, $clientOrigin);
 
 if (!$uploadUrl) {
     http_response_code(502);

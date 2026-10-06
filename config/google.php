@@ -83,7 +83,7 @@ class GoogleDriveManager {
      * Initiates a Google Drive Resumable Upload Session.
      * Returns the direct Google Resumable Upload Session URI for client-side streaming.
      */
-    public static function createResumableUploadSession(array $account, PDO $pdo, string $filename, string $mimeType, int $fileSize): ?string {
+    public static function createResumableUploadSession(array $account, PDO $pdo, string $filename, string $mimeType, int $fileSize, string $clientOrigin = ''): ?string {
         $accessToken = self::getValidAccessToken($account, $pdo);
         if (!$accessToken) {
             return null;
@@ -101,6 +101,10 @@ class GoogleDriveManager {
             'X-Upload-Content-Type: ' . ($mimeType ?: 'application/octet-stream'),
             'X-Upload-Content-Length: ' . $fileSize,
         ];
+
+        if (!empty($clientOrigin)) {
+            $headers[] = 'Origin: ' . $clientOrigin;
+        }
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [

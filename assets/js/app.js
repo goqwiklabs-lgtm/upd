@@ -495,6 +495,7 @@ async function startDirectUpload(file) {
         size: file.size,
         mimeType: file.type || 'application/octet-stream',
         folder_id: state.currentFolderId,
+        origin: window.location.origin,
       }),
     });
 
@@ -507,8 +508,7 @@ async function startDirectUpload(file) {
     const googleAccountId = initData.google_account_id;
     const shareToken = initData.share_token;
 
-    // Step 2: Stream file in chunks directly to Google Drive
-    // Chunk size: 2 MB (Google requires chunks in multiples of 256 KB)
+    // Step 2: Stream file in chunks directly or via relay
     const CHUNK_SIZE = 2 * 1024 * 1024;
     let start = 0;
     const total = file.size;
@@ -516,14 +516,29 @@ async function startDirectUpload(file) {
     while (start < total) {
       const end = Math.min(start + CHUNK_SIZE, total);
       const chunk = file.slice(start, end);
+      const contentRange = `bytes ${start}-${end - 1}/${total}`;
 
-      const response = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Range': `bytes ${start}-${end - 1}/${total}`,
-        },
-        body: chunk,
-      });
+      let response;
+      try {
+        // Attempt 1: Direct browser-to-Google
+        response = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Range': contentRange,
+          },
+          body: chunk,
+        });
+      } catch (corsErr) {
+        // Attempt 2: Relay chunk through server if browser blocks CORS
+        response = await fetch('api/upload_chunk.php', {
+          method: 'POST',
+          headers: {
+            'Content-Range': contentRange,
+            'X-Upload-Url': uploadUrl,
+          },
+          body: chunk,
+        });
+      }
 
       // Update progress
       start = end;

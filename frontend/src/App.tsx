@@ -89,6 +89,7 @@ export const App: React.FC = () => {
             size: file.size,
             mimeType: file.type || 'application/octet-stream',
             folder_id: currentFolderId,
+            origin: window.location.origin,
           }),
         });
         const initData = await initRes.json();
@@ -98,7 +99,7 @@ export const App: React.FC = () => {
 
         const { upload_url, google_account_id, share_token } = initData;
 
-        // Step 2: Stream directly to Google's resumable session in 2MB chunks
+        // Step 2: Stream in 2MB chunks directly or via relay if CORS blocked
         const CHUNK_SIZE = 2 * 1024 * 1024;
         let start = 0;
         const total = file.size;
@@ -106,14 +107,29 @@ export const App: React.FC = () => {
         while (start < total) {
           const end = Math.min(start + CHUNK_SIZE, total);
           const chunk = file.slice(start, end);
+          const contentRange = `bytes ${start}-${end - 1}/${total}`;
 
-          const putRes = await fetch(upload_url, {
-            method: 'PUT',
-            headers: {
-              'Content-Range': `bytes ${start}-${end - 1}/${total}`,
-            },
-            body: chunk,
-          });
+          let putRes: Response;
+          try {
+            // Attempt 1: Direct browser-to-Google streaming
+            putRes = await fetch(upload_url, {
+              method: 'PUT',
+              headers: {
+                'Content-Range': contentRange,
+              },
+              body: chunk,
+            });
+          } catch (netErr) {
+            // Attempt 2: If browser blocks cross-origin PUT (CORS), relay chunk through server
+            putRes = await fetch('/api/upload_chunk.php', {
+              method: 'POST',
+              headers: {
+                'Content-Range': contentRange,
+                'X-Upload-Url': upload_url,
+              },
+              body: chunk,
+            });
+          }
 
           start = end;
           const pct = Math.round((start / total) * 100);
