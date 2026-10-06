@@ -2,3 +2,5 @@ database.sqlite
 node_modules/
 .DS_Store
 cache/
+added/
+enable_auto_approve.py
