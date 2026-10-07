@@ -37,6 +37,31 @@ class ContentAnalyzer {
      * Analyze a single file by ID
      */
     public static function analyzeFile(PDO $pdo, int $fileId): array {
+        // 1. Invoke Python Deep Content Analyzer (inspects real image pixels, video frames with ffmpeg, and PDF text)
+        $pythonBin = '/workspaces/upd/.venv/bin/python';
+        $workerScript = __DIR__ . '/../workers/content_analyzer.py';
+        if (file_exists($pythonBin) && file_exists($workerScript)) {
+            $cmd = escapeshellcmd($pythonBin) . ' ' . escapeshellarg($workerScript) . ' --file-id ' . (int)$fileId . ' 2>&1';
+            $output = @shell_exec($cmd);
+            if (!empty($output)) {
+                $check = $pdo->prepare("SELECT content_tag, content_confidence, content_details FROM files WHERE id = ?");
+                $check->execute([$fileId]);
+                $updated = $check->fetch(PDO::FETCH_ASSOC);
+                if ($updated && !empty($updated['content_tag'])) {
+                    return [
+                        'success' => true,
+                        'file_id' => $fileId,
+                        'tag' => $updated['content_tag'],
+                        'content_tag' => $updated['content_tag'],
+                        'confidence' => (int)$updated['content_confidence'],
+                        'content_confidence' => (int)$updated['content_confidence'],
+                        'details' => $updated['content_details'],
+                        'content_details' => $updated['content_details'],
+                    ];
+                }
+            }
+        }
+
         $stmt = $pdo->prepare("SELECT f.*, g.* FROM files f JOIN google_accounts g ON f.google_account_id = g.id WHERE f.id = ?");
         $stmt->execute([$fileId]);
         $file = $stmt->fetch();
@@ -137,6 +162,22 @@ class ContentAnalyzer {
      * Batch analyze unclassified or all files
      */
     public static function batchAnalyze(PDO $pdo, int $limit = 50, bool $forceAll = false): array {
+        $pythonBin = '/workspaces/upd/.venv/bin/python';
+        $workerScript = __DIR__ . '/../workers/content_analyzer.py';
+        if (file_exists($pythonBin) && file_exists($workerScript)) {
+            $flag = $forceAll ? '--all' : '';
+            $cmd = escapeshellcmd($pythonBin) . ' ' . escapeshellarg($workerScript) . ' ' . $flag . ' --limit ' . (int)$limit . ' 2>&1';
+            $output = @shell_exec($cmd);
+            if (!empty($output)) {
+                $lines = explode("\n", trim($output));
+                $lastLine = end($lines);
+                $json = json_decode($lastLine, true);
+                if ($json && isset($json['success'])) {
+                    return $json;
+                }
+            }
+        }
+
         $sql = "SELECT id FROM files ";
         if (!$forceAll) {
             $sql .= "WHERE content_tag = 'unclassified' OR content_tag IS NULL ";
@@ -153,7 +194,7 @@ class ContentAnalyzer {
 
         return [
             'success' => true,
-            'scanned_count' => count($results),
+            'scanned' => count($results),
             'results' => $results,
         ];
     }
