@@ -1,6 +1,13 @@
--- Database schema for InfinityFree MySQL
--- File Storage & Multi-Account Google Drive Pool
+-- ========================================================
+-- InfinityFree MySQL Database Schema: if0_37976074_fileupload
+-- Host: sql200.infinityfree.com (Port: 3306)
+-- Username: if0_37976074
+-- ========================================================
 
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- 1. USERS TABLE
 CREATE TABLE IF NOT EXISTS `users` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `username` VARCHAR(50) NOT NULL UNIQUE,
@@ -15,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 2. BLOCKED IPS
 CREATE TABLE IF NOT EXISTS `blocked_ips` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `ip_address` VARCHAR(45) NOT NULL UNIQUE,
@@ -22,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `blocked_ips` (
   `blocked_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 3. GOOGLE ACCOUNTS (MULTI-ACCOUNT STORAGE POOL)
 CREATE TABLE IF NOT EXISTS `google_accounts` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `account_email` VARCHAR(100) NOT NULL,
@@ -31,7 +40,6 @@ CREATE TABLE IF NOT EXISTS `google_accounts` (
   `access_token` TEXT NULL,
   `token_expires_at` INT DEFAULT 0,
   `used_storage_bytes` BIGINT DEFAULT 0,
-  -- Dynamic limit calculated as: (Total Google Drive Capacity - User Previous Usage - 2GB Safety Buffer)
   `storage_limit_bytes` BIGINT DEFAULT 13958643712,
   `total_capacity_bytes` BIGINT DEFAULT 16106127360,
   `initial_used_bytes` BIGINT DEFAULT 0,
@@ -40,6 +48,7 @@ CREATE TABLE IF NOT EXISTS `google_accounts` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 4. FOLDERS
 CREATE TABLE IF NOT EXISTS `folders` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `user_id` INT NOT NULL,
@@ -48,10 +57,11 @@ CREATE TABLE IF NOT EXISTS `folders` (
   `share_token` VARCHAR(64) NULL UNIQUE,
   `is_public` TINYINT(1) DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`parent_id`) REFERENCES `folders`(`id`) ON DELETE CASCADE
+  INDEX (`user_id`),
+  INDEX (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 5. FILES
 CREATE TABLE IF NOT EXISTS `files` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `user_id` INT NOT NULL,
@@ -71,11 +81,13 @@ CREATE TABLE IF NOT EXISTS `files` (
   `blocked_reason` VARCHAR(255) NULL,
   `blocked_at` TIMESTAMP NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`folder_id`) REFERENCES `folders`(`id`) ON DELETE SET NULL,
-  FOREIGN KEY (`google_account_id`) REFERENCES `google_accounts`(`id`) ON DELETE RESTRICT
+  INDEX (`user_id`),
+  INDEX (`folder_id`),
+  INDEX (`google_account_id`),
+  INDEX (`share_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 6. LIVE VISITORS
 CREATE TABLE IF NOT EXISTS `live_visitors` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `session_id` VARCHAR(64) NOT NULL UNIQUE,
@@ -92,11 +104,13 @@ CREATE TABLE IF NOT EXISTS `live_visitors` (
   INDEX (`ip_address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 7. SETTINGS
 CREATE TABLE IF NOT EXISTS `settings` (
   `key_name` VARCHAR(50) PRIMARY KEY,
   `key_value` TEXT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 8. TEMPORARY TRANSFERS
 CREATE TABLE IF NOT EXISTS `temp_uploads` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `user_id` INT NULL,
@@ -114,6 +128,7 @@ CREATE TABLE IF NOT EXISTS `temp_uploads` (
   INDEX (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 9. TEMPORARY FILES
 CREATE TABLE IF NOT EXISTS `temp_files` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `temp_upload_id` INT NOT NULL,
@@ -124,9 +139,12 @@ CREATE TABLE IF NOT EXISTS `temp_files` (
   `size_bytes` BIGINT NOT NULL,
   `mime_type` VARCHAR(150),
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`temp_upload_id`) REFERENCES `temp_uploads`(`id`) ON DELETE CASCADE
+  INDEX (`temp_upload_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert default admin account (Email: omkumar.working@gmail.com, Username: omkumar, Password: Q0gng04bk3)
+-- DEFAULT ADMIN ACCOUNT
+-- Email: omkumar.working@gmail.com | Username: omkumar | Password: Q0gng04bk3
 INSERT IGNORE INTO `users` (`id`, `username`, `email`, `password_hash`, `role`)
 VALUES (1, 'omkumar', 'omkumar.working@gmail.com', '$2y$12$2bx9dFXpU8Agv0LIsKot7.sJy6QweLZbzFs0xXs3t/GoyXoAn4r1q', 'admin');
+
+SET FOREIGN_KEY_CHECKS = 1;

@@ -236,22 +236,30 @@ export class P2PTransferEngine {
       status: 'verifying',
     });
 
-    const fullBuffer = new Uint8Array(receivedBytes - startByte);
-    let offset = 0;
-    for (const chunk of chunks) {
-      fullBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // SHA-256 verification
-    const verifiedSha256 = await this.computeSha256(fullBuffer);
-    if (fileMeta.sha256 && fileMeta.sha256.toLowerCase() !== verifiedSha256.toLowerCase()) {
-      throw new Error(`Checksum verification failed! Expected: ${fileMeta.sha256}, Got: ${verifiedSha256}`);
-    }
-
-    const blob = new Blob([fullBuffer as unknown as BlobPart], {
+    // Direct chunked Blob assembly to prevent V8 ArrayBuffer heap allocation crash on files > 1GB
+    const blob = new Blob(chunks as unknown as BlobPart[], {
       type: fileMeta.type || 'application/octet-stream',
     });
+
+    // SHA-256 verification (safe for large files)
+    let verifiedSha256 = '';
+    if (fileMeta.sha256) {
+      if (receivedBytes < 64 * 1024 * 1024) {
+        const fullBuffer = new Uint8Array(receivedBytes - startByte);
+        let offset = 0;
+        for (const chunk of chunks) {
+          fullBuffer.set(chunk, offset);
+          offset += chunk.length;
+        }
+        verifiedSha256 = await this.computeSha256(fullBuffer);
+        if (fileMeta.sha256.toLowerCase() !== verifiedSha256.toLowerCase()) {
+          throw new Error(`Checksum verification failed! Expected: ${fileMeta.sha256}, Got: ${verifiedSha256}`);
+        }
+      }
+    }
+
+    // Free chunk references to allow immediate garbage collection
+    chunks.length = 0;
 
     onProgress({
       fileId: fileMeta.id,

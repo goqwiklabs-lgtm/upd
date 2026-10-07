@@ -27,6 +27,13 @@
 
   const p2pDeviceType = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) ? 'phone' : 'desktop';
 
+  function getP2PApiUrl() {
+    if (window.P2P_API_BASE) return window.P2P_API_BASE;
+    const path = window.location.pathname;
+    const dir = path.substring(0, path.lastIndexOf('/'));
+    return (dir && dir !== '/' ? dir : '') + '/api/p2p.php';
+  }
+
   // --- STATE VARIABLES ---
   let p2pActiveTab = 'send';
   let p2pHeartbeatTimer = null;
@@ -146,7 +153,7 @@
   // Network Connectivity Check
   async function checkNetworkConnectivity() {
     try {
-      const res = await fetch('/api/p2p.php?action=ping', { method: 'GET', cache: 'no-store' });
+      const res = await fetch(`${getP2PApiUrl()}?action=ping`, { method: 'GET', cache: 'no-store' });
       return res.ok;
     } catch {
       return false;
@@ -183,7 +190,7 @@
   // ============================================================================
   async function p2pPollHeartbeat() {
     try {
-      const res = await fetch('/api/p2p.php?action=heartbeat', {
+      const res = await fetch(`${getP2PApiUrl()}?action=heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -232,8 +239,9 @@
     }
 
     listEl.innerHTML = peers.map((p) => `
-      <div onclick="window.sendToPeer('${escapeAttr(p.peer_id)}', '${escapeAttr(p.device_name)}')"
-           class="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-500 hover:bg-emerald-50/40 transition cursor-pointer flex items-center justify-between group">
+      <div id="peer-card-${escapeAttr(p.peer_id)}"
+           onclick="window.sendToPeer('${escapeAttr(p.peer_id)}', '${escapeAttr(p.device_name)}')"
+           class="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-emerald-500 hover:bg-emerald-50/40 transition cursor-pointer flex items-center justify-between group">
         <div class="flex items-center space-x-3">
           <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform">
             <i class="fa-solid ${p.device_type === 'phone' ? 'fa-mobile-screen' : 'fa-laptop'}"></i>
@@ -243,10 +251,10 @@
             <span class="text-[10px] text-slate-400 font-mono">Tap to transfer</span>
           </div>
         </div>
-        <span class="text-[11px] font-semibold text-emerald-600 px-2.5 py-1 bg-emerald-50 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition flex items-center space-x-1">
+        <button id="peer-send-btn-${escapeAttr(p.peer_id)}" class="text-[11px] font-semibold text-emerald-600 px-3 py-1 bg-emerald-50 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition flex items-center space-x-1">
           <span>Send</span>
           <i class="fa-solid fa-paper-plane text-[10px]"></i>
-        </span>
+        </button>
       </div>
     `).join('');
   }
@@ -279,7 +287,7 @@
     // Show banner with animation
     banner.classList.remove('hidden');
     requestAnimationFrame(() => {
-      banner.classList.remove('-translate-y-4', 'opacity-0');
+      banner.classList.remove('-translate-y-6', 'opacity-0');
       banner.classList.add('translate-y-0', 'opacity-100');
     });
 
@@ -306,7 +314,7 @@
   window.acceptIncomingP2POffer = async function () {
     const banner = document.getElementById('p2p-incoming-banner');
     if (banner) {
-      banner.classList.add('-translate-y-4', 'opacity-0');
+      banner.classList.add('-translate-y-6', 'opacity-0');
       setTimeout(() => banner.classList.add('hidden'), 300);
     }
 
@@ -314,7 +322,7 @@
 
     const offer = p2pPendingOffer;
     try {
-      await fetch('/api/p2p.php?action=respond_offer', {
+      await fetch(`${getP2PApiUrl()}?action=respond_offer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ offer_id: offer.offer_id, response: 'accept' }),
@@ -329,13 +337,13 @@
   window.declineIncomingP2POffer = async function () {
     const banner = document.getElementById('p2p-incoming-banner');
     if (banner) {
-      banner.classList.add('-translate-y-4', 'opacity-0');
+      banner.classList.add('-translate-y-6', 'opacity-0');
       setTimeout(() => banner.classList.add('hidden'), 300);
     }
 
     if (!p2pPendingOffer) return;
     try {
-      await fetch('/api/p2p.php?action=respond_offer', {
+      await fetch(`${getP2PApiUrl()}?action=respond_offer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ offer_id: p2pPendingOffer.offer_id, response: 'decline' }),
@@ -347,7 +355,9 @@
   // ============================================================================
   // 3. SENDER ENGINE: MULTI-FILE HOSTING & BACKGROUND RESILIENT UPLOADING
   // ============================================================================
-  function handleFilesSelected(fileList) {
+  let p2pPendingTargetPeer = null;
+
+  async function handleFilesSelected(fileList) {
     if (!fileList || fileList.length === 0) return;
 
     // Append new files without duplicates
@@ -360,7 +370,15 @@
     }
 
     renderSenderFilesList();
-    initiateSenderHosting();
+    await initiateSenderHosting();
+
+    if (p2pPendingTargetPeer) {
+      const target = p2pPendingTargetPeer;
+      p2pPendingTargetPeer = null;
+      setTimeout(() => {
+        window.sendToPeer(target.id, target.name);
+      }, 150);
+    }
   }
 
   function renderSenderFilesList() {
@@ -435,7 +453,7 @@
         type: f.type || 'application/octet-stream',
       }));
 
-      const res = await fetch('/api/p2p.php?action=create_session', {
+      const res = await fetch(`${getP2PApiUrl()}?action=create_session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -451,8 +469,8 @@
       p2pCurrentSessionId = data.session_id;
       p2pSenderSessionData = data;
 
-      // 2. Generate Reachable Join QR Code instantly
-      const joinUrl = `${window.location.origin}/index.php?join=${p2pCurrentSessionId}`;
+      // 2. Generate Reachable Join QR Code instantly (clean URL without .php)
+      const joinUrl = data.clean_url || `${window.location.origin}/p2p/${p2pCurrentSessionId}`;
       if (joinLinkInput) joinLinkInput.value = joinUrl;
       if (codeEl) codeEl.textContent = `CODE: ${p2pCurrentSessionId}`;
 
@@ -484,7 +502,6 @@
       listenForWebRTCSignalsSender();
 
       // 5. Non-blocking Background Sync: buffer chunks to server as fallback
-      // (Runs purely in background without blocking UI or delaying 0s stream ready)
       bufferChunksInBackground(p2pCurrentSessionId, p2pSelectedFiles);
     } catch (err) {
       console.error('P2P Sender error:', err);
@@ -514,7 +531,7 @@
 
           try {
             await fetch(
-              `/api/p2p.php?action=upload_chunk&session=${encodeURIComponent(sessionId)}&file_index=${fIdx}&uploaded_bytes=${totalSent + chunk.size}&is_final=${isFinal ? 1 : 0}`,
+              `${getP2PApiUrl()}?action=upload_chunk&session=${encodeURIComponent(sessionId)}&file_index=${fIdx}&uploaded_bytes=${totalSent + chunk.size}&is_final=${isFinal ? 1 : 0}`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/octet-stream' },
@@ -537,7 +554,10 @@
   // Tapping a device on the radar sends a direct transfer request
   window.sendToPeer = async function (targetPeerId, targetDeviceName) {
     if (p2pSelectedFiles.length === 0) {
-      alert(`Please select files first, then tap ${targetDeviceName}`);
+      p2pPendingTargetPeer = { id: targetPeerId, name: targetDeviceName };
+      if (typeof window.showInAppToast === 'function') {
+        window.showInAppToast(`Please select files to send to ${targetDeviceName}`, 'info');
+      }
       document.getElementById('p2p-send-file-input')?.click();
       return;
     }
@@ -547,6 +567,12 @@
     }
 
     const uploadStatusEl = document.getElementById('p2p-send-upload-status');
+    const peerBtn = document.getElementById(`peer-send-btn-${targetPeerId}`);
+    if (peerBtn) {
+      peerBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-xs mr-1"></i> Sending...`;
+      peerBtn.className = 'text-[11px] font-semibold text-amber-700 bg-amber-100 px-3 py-1 rounded-xl transition flex items-center';
+    }
+
     if (uploadStatusEl) {
       uploadStatusEl.textContent = `📲 Sending transfer request to ${targetDeviceName}...`;
       uploadStatusEl.className = 'text-[11px] text-blue-600 font-bold';
@@ -561,7 +587,7 @@
       }));
       const totalBytes = p2pSelectedFiles.reduce((acc, f) => acc + f.size, 0);
 
-      const res = await fetch('/api/p2p.php?action=send_offer', {
+      const res = await fetch(`${getP2PApiUrl()}?action=send_offer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -575,14 +601,73 @@
       });
 
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.offer_id) {
+        const offerId = data.offer_id;
         if (uploadStatusEl) {
           uploadStatusEl.textContent = `⏳ Request sent to ${targetDeviceName}! Waiting for acceptance...`;
           uploadStatusEl.className = 'text-[11px] text-amber-600 font-bold';
         }
+        if (typeof window.showInAppToast === 'function') {
+          window.showInAppToast(`Transfer request sent to ${targetDeviceName}`, 'info');
+        }
+
+        // Active polling: wait for target peer acceptance
+        let pollCount = 0;
+        const offerPollTimer = setInterval(async () => {
+          pollCount++;
+          if (pollCount > 80 || !p2pCurrentSessionId) {
+            clearInterval(offerPollTimer);
+            if (peerBtn) {
+              peerBtn.innerHTML = `<span>Send</span> <i class="fa-solid fa-paper-plane text-[10px] ml-1"></i>`;
+              peerBtn.className = 'text-[11px] font-semibold text-emerald-600 px-3 py-1 bg-emerald-50 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition flex items-center space-x-1';
+            }
+            return;
+          }
+
+          try {
+            const checkRes = await fetch(`${getP2PApiUrl()}?action=check_offer_status&offer_id=${encodeURIComponent(offerId)}`);
+            const checkData = await checkRes.json();
+            if (checkData.success) {
+              if (checkData.status === 'accepted') {
+                clearInterval(offerPollTimer);
+                if (uploadStatusEl) {
+                  uploadStatusEl.textContent = `✅ ${targetDeviceName} accepted! Establishing connection...`;
+                  uploadStatusEl.className = 'text-[11px] text-emerald-600 font-bold';
+                }
+                if (peerBtn) {
+                  peerBtn.innerHTML = `<i class="fa-solid fa-check text-xs mr-1"></i> Accepted`;
+                  peerBtn.className = 'text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-xl transition flex items-center';
+                }
+                if (typeof window.showInAppToast === 'function') {
+                  window.showInAppToast(`${targetDeviceName} accepted! Beaming files...`, 'success');
+                }
+                listenForWebRTCSignalsSender();
+              } else if (checkData.status === 'declined') {
+                clearInterval(offerPollTimer);
+                if (uploadStatusEl) {
+                  uploadStatusEl.textContent = `❌ ${targetDeviceName} declined the transfer request.`;
+                  uploadStatusEl.className = 'text-[11px] text-rose-500 font-bold';
+                }
+                if (peerBtn) {
+                  peerBtn.innerHTML = `<span>Declined</span>`;
+                  peerBtn.className = 'text-[11px] font-semibold text-rose-700 bg-rose-100 px-3 py-1 rounded-xl transition flex items-center';
+                  setTimeout(() => {
+                    peerBtn.innerHTML = `<span>Send</span> <i class="fa-solid fa-paper-plane text-[10px] ml-1"></i>`;
+                    peerBtn.className = 'text-[11px] font-semibold text-emerald-600 px-3 py-1 bg-emerald-50 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition flex items-center space-x-1';
+                  }, 3000);
+                }
+                if (typeof window.showInAppToast === 'function') {
+                  window.showInAppToast(`${targetDeviceName} declined the transfer request`, 'info');
+                }
+              }
+            }
+          } catch {}
+        }, 750);
       }
     } catch (err) {
-      alert('Failed to send transfer request: ' + err.message);
+      if (typeof window.showInAppToast === 'function') {
+        window.showInAppToast('Failed to send transfer request: ' + err.message, 'error');
+      }
     }
   };
 
@@ -599,6 +684,7 @@
 
   let p2pSenderSince = 0;
   let p2pReceiverSince = 0;
+  let p2pSenderActiveReqId = null;
 
   async function listenForWebRTCSignalsSender() {
     if (p2pSenderPeerConnection) {
@@ -606,52 +692,10 @@
       p2pSenderPeerConnection = null;
     }
 
-    const pc = new RTCPeerConnection(rtcConfig);
-    p2pSenderPeerConnection = pc;
     let senderPendingCandidates = [];
 
-    const dc = pc.createDataChannel('p2pStream', { ordered: true });
-    p2pSenderDataChannel = dc;
-    dc.binaryType = 'arraybuffer';
-
-    dc.onopen = () => {
-      console.log('[WebRTC] DataChannel connected directly! Starting 30–80 MB/s stream');
-      const statusEl = document.getElementById('p2p-send-upload-status');
-      if (statusEl) {
-        statusEl.textContent = '🚀 Direct LAN DataChannel Live (30–80 MB/s)!';
-        statusEl.className = 'text-[11px] text-emerald-600 font-black';
-      }
-      setTimeout(() => {
-        if (!p2pSenderIsStreaming) streamFilesOverDataChannel(dc);
-      }, 250);
-    };
-
-    dc.onmessage = (event) => {
-      try {
-        const msg = typeof event.data === 'string' ? JSON.parse(event.data) : null;
-        if (!msg) return;
-        if (msg.type === 'ready') {
-          console.log('[WebRTC Sender] Receiver confirmed ready, streaming now');
-          streamFilesOverDataChannel(dc);
-        }
-        if (msg.type === 'pause') p2pIsTransferPaused = true;
-        if (msg.type === 'resume') p2pIsTransferPaused = false;
-        if (msg.type === 'cancel') p2pIsTransferStopped = true;
-      } catch {}
-    };
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        sendSignalToRole('receiver', { type: 'candidate', candidate: e.candidate });
-      }
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await sendSignalToRole('receiver', { type: 'offer', sdp: offer.sdp });
-
     const pollTimer = setInterval(async () => {
-      if (!p2pCurrentSessionId || pc.connectionState === 'closed') {
+      if (!p2pCurrentSessionId) {
         clearInterval(pollTimer);
         return;
       }
@@ -659,21 +703,78 @@
       const signals = await getSignalsForRole('sender', p2pSenderSince);
       for (const item of signals) {
         const sig = item.signal;
+        if (!sig) continue;
+
         if (sig.type === 'connect_request') {
-          console.log('[WebRTC Sender] Receiver requested fresh offer, recreating...');
-          clearInterval(pollTimer);
-          listenForWebRTCSignalsSender();
-          return;
-        } else if (sig.type === 'answer' && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(new RTCSessionDescription(sig));
-          for (const c of senderPendingCandidates) {
-            try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+          const reqId = sig.req_id || ('conn_' + Date.now());
+          console.log('[WebRTC Sender] Received connect_request, reqId:', reqId);
+          p2pSenderActiveReqId = reqId;
+
+          if (p2pSenderPeerConnection) {
+            try { p2pSenderPeerConnection.close(); } catch {}
+            p2pSenderPeerConnection = null;
           }
+
+          const pc = new RTCPeerConnection(rtcConfig);
+          p2pSenderPeerConnection = pc;
           senderPendingCandidates = [];
-        } else if (sig.type === 'candidate' && sig.candidate) {
-          if (pc.currentRemoteDescription) {
+
+          const dc = pc.createDataChannel('p2pStream', { ordered: true });
+          p2pSenderDataChannel = dc;
+          dc.binaryType = 'arraybuffer';
+
+          dc.onopen = () => {
+            console.log('[WebRTC] DataChannel connected directly! Starting 30–80 MB/s LAN stream');
+            const statusEl = document.getElementById('p2p-send-upload-status');
+            if (statusEl) {
+              statusEl.textContent = '🚀 Direct LAN DataChannel Live (30–80 MB/s)!';
+              statusEl.className = 'text-[11px] text-emerald-600 font-black';
+            }
+            setTimeout(() => {
+              if (!p2pSenderIsStreaming) streamFilesOverDataChannel(dc);
+            }, 100);
+          };
+
+          dc.onmessage = (event) => {
             try {
-              await pc.addIceCandidate(new RTCIceCandidate(sig.candidate));
+              const msg = typeof event.data === 'string' ? JSON.parse(event.data) : null;
+              if (!msg) return;
+              if (msg.type === 'ready') {
+                console.log('[WebRTC Sender] Receiver confirmed ready, streaming now');
+                streamFilesOverDataChannel(dc);
+              }
+              if (msg.type === 'pause') p2pIsTransferPaused = true;
+              if (msg.type === 'resume') p2pIsTransferPaused = false;
+              if (msg.type === 'cancel') {
+                p2pIsTransferStopped = true;
+                p2pSenderIsStreaming = false;
+              }
+            } catch {}
+          };
+
+          pc.onicecandidate = (e) => {
+            if (e.candidate) {
+              sendSignalToRole('receiver', { type: 'candidate', candidate: e.candidate, req_id: reqId });
+            }
+          };
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await sendSignalToRole('receiver', { type: 'offer', sdp: offer.sdp, req_id: reqId });
+
+        } else if (sig.type === 'answer' && p2pSenderPeerConnection && (!sig.req_id || sig.req_id === p2pSenderActiveReqId)) {
+          if (!p2pSenderPeerConnection.currentRemoteDescription) {
+            console.log('[WebRTC Sender] Received remote answer for reqId:', sig.req_id);
+            await p2pSenderPeerConnection.setRemoteDescription(new RTCSessionDescription(sig));
+            for (const c of senderPendingCandidates) {
+              try { await p2pSenderPeerConnection.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+            }
+            senderPendingCandidates = [];
+          }
+        } else if (sig.type === 'candidate' && sig.candidate && (!sig.req_id || sig.req_id === p2pSenderActiveReqId)) {
+          if (p2pSenderPeerConnection && p2pSenderPeerConnection.currentRemoteDescription) {
+            try {
+              await p2pSenderPeerConnection.addIceCandidate(new RTCIceCandidate(sig.candidate));
             } catch (e) {
               console.warn('[WebRTC Sender] Add ICE error:', e);
             }
@@ -682,7 +783,7 @@
           }
         }
       }
-    }, 350);
+    }, 250);
   }
 
   async function streamFilesOverDataChannel(dc) {
@@ -725,9 +826,15 @@
           await new Promise((r) => setTimeout(r, 200));
         }
 
-        if (dc.bufferedAmount > 2 * 1024 * 1024) {
+        if (dc.bufferedAmount > 4 * 1024 * 1024) {
           await new Promise((resolve) => {
+            if (dc.bufferedAmount <= 1024 * 1024) return resolve();
+            const timeout = setTimeout(() => {
+              dc.onbufferedamountlow = null;
+              resolve();
+            }, 80);
             dc.onbufferedamountlow = () => {
+              clearTimeout(timeout);
               dc.onbufferedamountlow = null;
               resolve();
             };
@@ -741,6 +848,11 @@
         dc.send(buffer);
         offset = sliceEnd;
         totalSentAllFiles += buffer.byteLength;
+
+        // Micro-yield every 64 chunks (~4MB) to prevent browser thread freeze on files > 1GB
+        if ((offset / CHUNK_SIZE) % 64 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
 
         const now = performance.now();
         const deltaSec = (now - lastTime) / 1000;
@@ -783,7 +895,7 @@
   async function sendSignalToRole(toRole, signalData) {
     if (!p2pCurrentSessionId) return;
     try {
-      await fetch('/api/p2p.php?action=signal', {
+      await fetch(`${getP2PApiUrl()}?action=signal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -801,7 +913,7 @@
   async function getSignalsForRole(role, since = 0) {
     if (!p2pCurrentSessionId) return [];
     try {
-      let url = `/api/p2p.php?action=signal&session_id=${encodeURIComponent(p2pCurrentSessionId)}&role=${encodeURIComponent(role)}`;
+      let url = `${getP2PApiUrl()}?action=signal&session_id=${encodeURIComponent(p2pCurrentSessionId)}&role=${encodeURIComponent(role)}`;
       if (since > 0) url += `&since=${since}`;
       const res = await fetch(url);
       const data = await res.json();
@@ -817,7 +929,7 @@
 
   async function sendSignal(target, signalData) {
     try {
-      await fetch('/api/p2p.php?action=signal', {
+      await fetch(`${getP2PApiUrl()}?action=signal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -831,7 +943,7 @@
 
   async function getSignals(peerId) {
     try {
-      const res = await fetch(`/api/p2p.php?action=signal&peer_id=${peerId}`);
+      const res = await fetch(`${getP2PApiUrl()}?action=signal&peer_id=${peerId}`);
       const data = await res.json();
       return data.signals || [];
     } catch {
@@ -864,10 +976,12 @@
     }
 
     try {
-      const res = await fetch(`/api/p2p.php?action=get_session&session=${sessionId}`);
+      const res = await fetch(`${getP2PApiUrl()}?action=get_session&session=${encodeURIComponent(sessionId)}`);
       const data = await res.json();
       if (!data.success) {
-        alert('Invalid or expired transfer code: ' + (data.error || ''));
+        if (typeof window.showInAppToast === 'function') {
+          window.showInAppToast('Invalid or expired transfer code: ' + (data.error || ''), 'error');
+        }
         return;
       }
 
@@ -931,7 +1045,7 @@
             return;
           }
           try {
-            const checkRes = await fetch(`/api/p2p.php?action=get_session&session=${sessionId}`);
+            const checkRes = await fetch(`${getP2PApiUrl()}?action=get_session&session=${encodeURIComponent(sessionId)}`);
             const checkData = await checkRes.json();
             if (!checkData.success) return;
 
@@ -958,7 +1072,9 @@
         }, 800);
       }
     } catch (err) {
-      alert('Could not connect to transfer session: ' + err.message);
+      if (typeof window.showInAppToast === 'function') {
+        window.showInAppToast('Could not connect to transfer session: ' + err.message, 'error');
+      }
     }
   }
 
@@ -1027,12 +1143,15 @@
 
       let checkOfferInterval = null;
       let receiverPendingCandidates = [];
+      const reqId = 'req_' + Math.random().toString(36).substr(2, 9);
+      let isAnswerSent = false;
 
+      // 12 second ICE & connection timeout for WebRTC
       let timer = setTimeout(() => {
-        console.warn('[WebRTC] Connection timeout (4.5s), falling back to high-speed HTTP streaming');
+        console.warn('[WebRTC] Connection timeout (12s), falling back to high-speed HTTP streaming');
         if (checkOfferInterval) clearInterval(checkOfferInterval);
         resolve(false);
-      }, 4500);
+      }, 12000);
 
       pc.ondatachannel = (e) => {
         clearTimeout(timer);
@@ -1059,14 +1178,14 @@
 
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          sendSignalToRole('sender', { type: 'candidate', candidate: e.candidate });
+          sendSignalToRole('sender', { type: 'candidate', candidate: e.candidate, req_id: reqId });
         }
       };
 
-      // Request fresh connection from sender
-      sendSignalToRole('sender', { type: 'connect_request' });
+      // Request fresh connection from sender with unique reqId
+      sendSignalToRole('sender', { type: 'connect_request', req_id: reqId });
 
-      // Check for sender's offer and ICE candidates
+      // Poll for sender's offer and ICE candidates
       checkOfferInterval = setInterval(async () => {
         if (!p2pCurrentSessionId || pc.connectionState === 'closed' || pc.connectionState === 'connected') {
           if (checkOfferInterval) clearInterval(checkOfferInterval);
@@ -1076,18 +1195,20 @@
         const signals = await getSignalsForRole('receiver', p2pReceiverSince);
         for (const item of signals) {
           const sig = item.signal;
-          if (sig.type === 'offer') {
-            if (!pc.currentRemoteDescription) {
-              await pc.setRemoteDescription(new RTCSessionDescription(sig));
-              for (const c of receiverPendingCandidates) {
-                try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
-              }
-              receiverPendingCandidates = [];
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              await sendSignalToRole('sender', { type: 'answer', sdp: answer.sdp });
+          if (!sig) continue;
+
+          if (sig.type === 'offer' && (!sig.req_id || sig.req_id === reqId) && !isAnswerSent) {
+            isAnswerSent = true;
+            console.log('[WebRTC Receiver] Received matching offer for reqId:', sig.req_id);
+            await pc.setRemoteDescription(new RTCSessionDescription(sig));
+            for (const c of receiverPendingCandidates) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
             }
-          } else if (sig.type === 'candidate' && sig.candidate) {
+            receiverPendingCandidates = [];
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await sendSignalToRole('sender', { type: 'answer', sdp: answer.sdp, req_id: reqId });
+          } else if (sig.type === 'candidate' && sig.candidate && (!sig.req_id || sig.req_id === reqId)) {
             if (pc.currentRemoteDescription) {
               try {
                 await pc.addIceCandidate(new RTCIceCandidate(sig.candidate));
@@ -1099,7 +1220,7 @@
             }
           }
         }
-      }, 350);
+      }, 250);
     });
   }
 
@@ -1108,6 +1229,7 @@
     let chunkBuffer = [];
     let bufferBytes = 0;
     let currentFileInfo = null;
+    let currentFileBytesReceived = 0;
     let totalBytesReceived = 0;
     let fileIndex = 0;
 
@@ -1122,30 +1244,58 @@
           fileBlobs = [];
           chunkBuffer = [];
           bufferBytes = 0;
+          currentFileBytesReceived = 0;
           currentFileInfo = msg;
           fileIndex = msg.index || 0;
           updateActiveTransferUI(fileIndex + 1, files.length, msg.name);
         } else if (msg.type === 'file_end') {
-          if (currentFileInfo) {
+          // STRICT COMPLETION CHECK: Only save file when 100% fetched and NOT cancelled
+          if (!p2pIsTransferStopped && currentFileInfo && (currentFileBytesReceived === currentFileInfo.size || currentFileInfo.size === 0)) {
             if (chunkBuffer.length > 0) fileBlobs.push(new Blob(chunkBuffer));
             const blob = new Blob(fileBlobs, { type: currentFileInfo.type || 'application/octet-stream' });
             triggerDownload(blob, currentFileInfo.name);
+          } else {
+            // Cancelled or incomplete chunks: purge immediately
             fileBlobs = [];
             chunkBuffer = [];
-            bufferBytes = 0;
+          }
+          fileBlobs = [];
+          chunkBuffer = [];
+          bufferBytes = 0;
+          currentFileBytesReceived = 0;
+          currentFileInfo = null;
+        } else if (msg.type === 'cancel') {
+          p2pIsTransferStopped = true;
+          fileBlobs = [];
+          chunkBuffer = [];
+          bufferBytes = 0;
+          currentFileBytesReceived = 0;
+          currentFileInfo = null;
+          window.resetP2PReceiver();
+          if (typeof window.showInAppToast === 'function') {
+            window.showInAppToast('Transfer was cancelled by sender. Incomplete download discarded.', 'info');
           }
         } else if (msg.type === 'all_done') {
-          onAllTransfersComplete();
+          if (!p2pIsTransferStopped) {
+            onAllTransfersComplete();
+          }
         }
       } else {
+        if (p2pIsTransferStopped) {
+          fileBlobs = [];
+          chunkBuffer = [];
+          return;
+        }
+
         const chunk = event.data;
         chunkBuffer.push(chunk);
         const chunkLen = chunk.byteLength || chunk.size || 0;
         bufferBytes += chunkLen;
+        currentFileBytesReceived += chunkLen;
         totalBytesReceived += chunkLen;
 
-        // Commit every 4MB to browser blob storage to keep JS heap RAM free
-        if (bufferBytes >= 4 * 1024 * 1024) {
+        // Commit every 16MB to browser blob storage to keep JS heap RAM free
+        if (bufferBytes >= 16 * 1024 * 1024) {
           fileBlobs.push(new Blob(chunkBuffer));
           chunkBuffer = [];
           bufferBytes = 0;
@@ -1183,11 +1333,18 @@
       const fileMeta = files[fIdx];
       updateActiveTransferUI(fIdx + 1, files.length, fileMeta.name);
 
+      const expectedFileSize = fileMeta.size || 0;
+      if (expectedFileSize === 0) {
+        if (!p2pIsTransferStopped) {
+          triggerDownload(new Blob([], { type: fileMeta.type || 'application/octet-stream' }), fileMeta.name);
+        }
+        continue;
+      }
+
       let fileBlobs = [];
       let chunkBuffer = [];
       let bufferBytes = 0;
       let fileBytesReceived = 0;
-      const expectedFileSize = fileMeta.size || 0;
 
       while (fileBytesReceived < expectedFileSize && !p2pIsTransferStopped) {
         while (p2pIsTransferPaused && !p2pIsTransferStopped) {
@@ -1196,7 +1353,7 @@
         if (p2pIsTransferStopped) break;
 
         p2pTransferAbortController = new AbortController();
-        const downloadUrl = `/api/p2p.php?action=stream&session=${p2pCurrentSessionId}&file_index=${fIdx}`;
+        const downloadUrl = `${getP2PApiUrl()}?action=stream&session=${encodeURIComponent(p2pCurrentSessionId)}&file_index=${fIdx}`;
 
         try {
           const headers = {};
@@ -1230,8 +1387,8 @@
               fileBytesReceived += value.length;
               totalBytesReceived += value.length;
 
-              // Batch every 4MB into Blob to prevent JS array RAM exhaustion
-              if (bufferBytes >= 4 * 1024 * 1024) {
+              // Batch every 16MB into Blob to prevent JS array RAM exhaustion
+              if (bufferBytes >= 16 * 1024 * 1024) {
                 fileBlobs.push(new Blob(chunkBuffer));
                 chunkBuffer = [];
                 bufferBytes = 0;
@@ -1255,17 +1412,21 @@
             }
           }
         } catch (err) {
-          if (err.name === 'AbortError') break;
+          if (err.name === 'AbortError' || p2pIsTransferStopped) break;
           console.warn('Chunk stream retry:', err);
           await new Promise((r) => setTimeout(r, 400));
         }
       }
 
-      // Save file when completed
-      if (!p2pIsTransferStopped && (fileBlobs.length > 0 || chunkBuffer.length > 0)) {
+      // STRICT COMPLETION GUARD: Save file ONLY when 100% completed and NOT cancelled
+      if (!p2pIsTransferStopped && fileBytesReceived === expectedFileSize && (expectedFileSize > 0 || fileMeta.size === 0)) {
         if (chunkBuffer.length > 0) fileBlobs.push(new Blob(chunkBuffer));
         const mergedBlob = new Blob(fileBlobs, { type: fileMeta.type || 'application/octet-stream' });
         triggerDownload(mergedBlob, fileMeta.name);
+      } else {
+        // Discard incomplete partial chunks immediately
+        fileBlobs = [];
+        chunkBuffer = [];
       }
     }
 
@@ -1297,14 +1458,15 @@
   }
 
   function triggerDownload(blob, fileName) {
+    if (p2pIsTransferStopped) return;
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    // Keep blob URL alive for at least 90s so browser download manager finishes streaming 1GB+ to disk
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 90000);
   }
 
   function onAllTransfersComplete() {
@@ -1350,20 +1512,35 @@
     }
   };
 
-  window.stopP2PTransfer = function () {
-    if (!confirm('Are you sure you want to cancel the transfer?')) return;
+  window.stopP2PTransfer = async function () {
+    const ok = typeof window.showInAppConfirm === 'function' ? await window.showInAppConfirm({
+      title: 'Cancel Transfer?',
+      message: 'Are you sure you want to cancel the transfer? Any incomplete downloads will be discarded.',
+      isDanger: true,
+      confirmText: 'Cancel Transfer',
+    }) : true;
+    if (!ok) return;
+
     p2pIsTransferStopped = true;
 
     if (p2pTransferAbortController) {
-      p2pTransferAbortController.abort();
+      try { p2pTransferAbortController.abort(); } catch {}
     }
     if (p2pReceiverDataChannel) {
       try {
         p2pReceiverDataChannel.send(JSON.stringify({ type: 'cancel' }));
       } catch {}
     }
+    if (p2pSenderDataChannel) {
+      try {
+        p2pSenderDataChannel.send(JSON.stringify({ type: 'cancel' }));
+      } catch {}
+    }
 
     window.resetP2PReceiver();
+    if (typeof window.showInAppToast === 'function') {
+      window.showInAppToast('Transfer cancelled. Incomplete file discarded.', 'info');
+    }
   };
 
   // ============================================================================
@@ -1484,15 +1661,19 @@
   window.copyP2PJoinLink = function () {
     const input = document.getElementById('p2p-send-join-link');
     if (input) {
-      navigator.clipboard.writeText(input.value);
-      alert('Transfer link copied to clipboard:\n' + input.value);
+      navigator.clipboard.writeText(input.value).then(() => {
+        if (typeof window.showInAppToast === 'function') {
+          window.showInAppToast('P2P transfer link copied to clipboard!', 'success');
+        }
+      });
     }
   };
 
   window.handleP2PManualJoin = function () {
     const input = document.getElementById('p2p-manual-code-input');
     if (!input || !input.value.trim()) return;
-    loadIncomingSession(input.value.trim());
+    const code = input.value.trim().toUpperCase();
+    loadIncomingSession(code);
   };
 
   window.startP2PDownload = startP2PDownload;
@@ -1527,6 +1708,17 @@
       });
     }
 
+    // 2b. Bind Manual Code Input Enter key
+    const manualInput = document.getElementById('p2p-manual-code-input');
+    if (manualInput) {
+      manualInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          window.handleP2PManualJoin();
+        }
+      });
+    }
+
     // 3. Drag-and-drop on dropzone
     const dropzone = document.getElementById('p2p-send-dropzone');
     if (dropzone) {
@@ -1547,10 +1739,19 @@
       });
     }
 
-    // 4. Auto-detect join URL parameter: e.g. /?join=A8F201
+    // 3b. Expose global file selector handler for external buttons
+    window.p2pHandleFilesSelected = handleFilesSelected;
+
+    // 4. Auto-detect join URL parameter or clean path: e.g. /p2p/A8F201, /join/A8F201 or ?join=A8F201
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('join')) {
-      const joinCode = urlParams.get('join');
+    let joinCode = urlParams.get('join');
+    if (!joinCode) {
+      const pathMatch = window.location.pathname.match(/(?:p2p|join)\/([a-zA-Z0-9_\-]+)/i);
+      if (pathMatch) {
+        joinCode = pathMatch[1];
+      }
+    }
+    if (joinCode) {
       window.openP2PShareModal('receive');
       loadIncomingSession(joinCode);
     }

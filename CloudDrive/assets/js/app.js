@@ -21,6 +21,153 @@ const state = {
   tempFolderName: '',
 };
 
+// --- CUSTOM IN-APP DIALOGS & NOTIFICATIONS (NO BROWSER POPUPS) ---
+window.showInAppToast = function (message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  const bg = type === 'success' ? 'bg-slate-900 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30' :
+             type === 'error' ? 'bg-slate-900 border-rose-500/50 text-rose-300 ring-1 ring-rose-500/30' :
+             'bg-slate-900 border-slate-700 text-white shadow-xl';
+  const icon = type === 'success' ? '<i class="fa-solid fa-circle-check text-emerald-400 mr-2 text-sm"></i>' :
+               type === 'error' ? '<i class="fa-solid fa-circle-exclamation text-rose-400 mr-2 text-sm"></i>' :
+               '<i class="fa-solid fa-circle-info text-blue-400 mr-2 text-sm"></i>';
+
+  toast.className = `${bg} pointer-events-auto border rounded-2xl px-4 py-3 text-xs font-semibold shadow-2xl flex items-center justify-between backdrop-blur-md transition-all duration-300 transform translate-y-3 opacity-0`;
+  toast.innerHTML = `
+    <div class="flex items-center truncate mr-2">
+      ${icon}
+      <span class="truncate">${escapeHtml(message)}</span>
+    </div>
+    <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white p-0.5 ml-2 transition">
+      <i class="fa-solid fa-xmark text-xs"></i>
+    </button>
+  `;
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-y-3', 'opacity-0');
+  });
+
+  setTimeout(() => {
+    toast.classList.add('translate-y-3', 'opacity-0');
+    setTimeout(() => toast.remove(), 350);
+  }, 3200);
+};
+
+window.showInAppConfirm = function ({ title = 'Confirm Action', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', isDanger = true } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('in-app-confirm-modal');
+    if (!modal) return resolve(false);
+
+    const titleEl = document.getElementById('in-app-confirm-title');
+    const msgEl = document.getElementById('in-app-confirm-message');
+    const okBtn = document.getElementById('in-app-confirm-ok-btn');
+    const cancelBtn = document.getElementById('in-app-confirm-cancel-btn');
+    const iconBox = document.getElementById('in-app-confirm-icon-box');
+    const icon = document.getElementById('in-app-confirm-icon');
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) msgEl.textContent = message;
+    if (okBtn) {
+      okBtn.textContent = confirmText;
+      okBtn.className = isDanger
+        ? 'px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition shadow-xs'
+        : 'px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition shadow-xs';
+    }
+    if (cancelBtn) cancelBtn.textContent = cancelText;
+
+    if (iconBox && icon) {
+      iconBox.className = isDanger ? 'w-11 h-11 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center text-lg shrink-0'
+                                   : 'w-11 h-11 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center text-lg shrink-0';
+      icon.className = isDanger ? 'fa-solid fa-trash-can' : 'fa-solid fa-circle-question';
+    }
+
+    modal.classList.remove('hidden');
+
+    const handleOk = () => {
+      cleanup();
+      modal.classList.add('hidden');
+      resolve(true);
+    };
+
+    const handleCancel = () => {
+      cleanup();
+      modal.classList.add('hidden');
+      resolve(false);
+    };
+
+    const cleanup = () => {
+      okBtn.removeEventListener('click', handleOk);
+      cancelBtn.removeEventListener('click', handleCancel);
+    };
+
+    okBtn.addEventListener('click', handleOk, { once: true });
+    cancelBtn.addEventListener('click', handleCancel, { once: true });
+  });
+};
+
+window.showInAppPrompt = function ({ title = 'Rename', message = 'Please enter a new name.', defaultValue = '', confirmText = 'Save' } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('in-app-prompt-modal');
+    if (!modal) return resolve(null);
+
+    const titleEl = document.getElementById('in-app-prompt-title');
+    const msgEl = document.getElementById('in-app-prompt-message');
+    const input = document.getElementById('in-app-prompt-input');
+    const okBtn = document.getElementById('in-app-prompt-ok-btn');
+    const cancelBtn = document.getElementById('in-app-prompt-cancel-btn');
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) msgEl.textContent = message;
+    if (input) {
+      input.value = defaultValue;
+    }
+    if (okBtn) okBtn.textContent = confirmText;
+
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 50);
+
+    const handleOk = () => {
+      cleanup();
+      modal.classList.add('hidden');
+      resolve(input ? input.value.trim() : null);
+    };
+
+    const handleCancel = () => {
+      cleanup();
+      modal.classList.add('hidden');
+      resolve(null);
+    };
+
+    const cleanup = () => {
+      okBtn.removeEventListener('click', handleOk);
+      cancelBtn.removeEventListener('click', handleCancel);
+      input.removeEventListener('keydown', handleKey);
+    };
+
+    const handleKey = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleOk();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+
+    okBtn.addEventListener('click', handleOk, { once: true });
+    cancelBtn.addEventListener('click', handleCancel, { once: true });
+    input.addEventListener('keydown', handleKey);
+  });
+};
+
 // --- INDEXEDDB RESUMABLE BACKGROUND UPLOAD STORE ---
 let activeUploadsCount = 0;
 let uploadDB = null;
@@ -133,6 +280,58 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// --- PERSISTENT AUTH & API REQUEST HELPERS ---
+function getAuthToken() {
+  return localStorage.getItem('clouddrive_remember_token') || '';
+}
+
+function setAuthToken(token) {
+  if (token) {
+    localStorage.setItem('clouddrive_remember_token', token);
+  } else {
+    localStorage.removeItem('clouddrive_remember_token');
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  const isInternal = typeof url === 'string' && (url.startsWith('api/') || url.startsWith('/api/') || !url.startsWith('http'));
+  const opts = { ...options };
+  opts.credentials = 'include';
+
+  if (isInternal) {
+    opts.headers = { ...(opts.headers || {}) };
+    const token = getAuthToken();
+    if (token && !opts.headers['Authorization'] && !opts.headers['X-Auth-Token']) {
+      opts.headers['Authorization'] = `Bearer ${token}`;
+      opts.headers['X-Auth-Token'] = token;
+    }
+  }
+  return fetch(url, opts);
+}
+
+// --- REALTIME SYNC ENGINE (<1ms VERSION CHECK) ---
+let lastSyncVersion = null;
+let realtimeWatcherTimer = null;
+
+function startRealtimeFileWatcher() {
+  if (realtimeWatcherTimer) clearInterval(realtimeWatcherTimer);
+  realtimeWatcherTimer = setInterval(async () => {
+    if (!state.user) return;
+    try {
+      const res = await apiFetch('api/files.php?action=sync_version');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && data.version) {
+        if (lastSyncVersion && lastSyncVersion !== data.version) {
+          // Changes detected remotely: silent background update
+          loadFiles(state.currentFolderId, true);
+        }
+        lastSyncVersion = data.version;
+      }
+    } catch {}
+  }, 2500);
+}
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
@@ -143,13 +342,17 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- AUTHENTICATION ---
 async function checkAuth() {
   try {
-    const res = await fetch('api/auth.php?action=me');
+    const res = await apiFetch('api/auth.php?action=me');
     const data = await res.json();
     if (data.authenticated) {
       state.user = data.user;
+      if (data.user && data.user.remember_token) {
+        setAuthToken(data.user.remember_token);
+      }
       renderApp();
       loadFiles(null);
       loadMyTempUploads();
+      startRealtimeFileWatcher();
       document.getElementById('logout-btn')?.classList.remove('hidden');
     } else {
       showAuthModal('login');
@@ -160,11 +363,15 @@ async function checkAuth() {
   }
 }
 
-function promptAuthModal() {
+async function promptAuthModal() {
   if (state.user) {
-    if (confirm(`Logged in as ${state.user.username} (${state.user.email}). Would you like to log out?`)) {
-      handleLogout();
-    }
+    const ok = await showInAppConfirm({
+      title: 'Log Out?',
+      message: `You are currently logged in as ${state.user.username} (${state.user.email}). Would you like to log out?`,
+      confirmText: 'Log Out',
+      isDanger: true,
+    });
+    if (ok) handleLogout();
   } else {
     showAuthModal('login');
   }
@@ -212,7 +419,7 @@ async function handleLogin(e) {
   errorEl.classList.add('hidden');
 
   try {
-    const res = await fetch('api/auth.php?action=login', {
+    const res = await apiFetch('api/auth.php?action=login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, password }),
@@ -220,9 +427,13 @@ async function handleLogin(e) {
     const data = await res.json();
     if (data.success) {
       state.user = data.user;
+      if (data.remember_token) {
+        setAuthToken(data.remember_token);
+      }
       hideAuthModal();
       renderApp();
       loadFiles(null);
+      startRealtimeFileWatcher();
     } else {
       errorEl.textContent = data.error || 'Login failed';
       errorEl.classList.remove('hidden');
@@ -243,7 +454,7 @@ async function handleRegister(e) {
   errorEl.classList.add('hidden');
 
   try {
-    const res = await fetch('api/auth.php?action=register', {
+    const res = await apiFetch('api/auth.php?action=register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email, password }),
@@ -251,9 +462,13 @@ async function handleRegister(e) {
     const data = await res.json();
     if (data.success) {
       state.user = data.user;
+      if (data.remember_token) {
+        setAuthToken(data.remember_token);
+      }
       hideAuthModal();
       renderApp();
       loadFiles(null);
+      startRealtimeFileWatcher();
     } else {
       errorEl.textContent = data.error || 'Registration failed';
       errorEl.classList.remove('hidden');
@@ -265,7 +480,8 @@ async function handleRegister(e) {
 }
 
 async function handleLogout() {
-  await fetch('api/auth.php?action=logout');
+  await apiFetch('api/auth.php?action=logout');
+  setAuthToken(null);
   state.user = null;
   location.reload();
 }
@@ -283,14 +499,16 @@ function renderApp() {
 }
 
 // --- FILE & FOLDER FETCHING ---
-async function loadFiles(folderId = null) {
+async function loadFiles(folderId = null, silent = false) {
   state.currentFolderId = folderId;
   const container = document.getElementById('file-explorer-content');
-  container.innerHTML = `<div class="p-12 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i><p>Loading files...</p></div>`;
+  if (!silent && container) {
+    container.innerHTML = `<div class="p-12 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i><p>Loading files...</p></div>`;
+  }
 
   try {
     const query = folderId !== null ? `?action=list&folder_id=${folderId}` : '?action=list';
-    const res = await fetch(`api/files.php${query}`);
+    const res = await apiFetch(`api/files.php${query}`);
     const data = await res.json();
 
     if (data.success) {
@@ -304,7 +522,9 @@ async function loadFiles(folderId = null) {
     }
   } catch (err) {
     console.error('Error loading files:', err);
-    container.innerHTML = `<div class="p-8 text-center text-red-500">Failed to load files.</div>`;
+    if (!silent && container) {
+      container.innerHTML = `<div class="p-8 text-center text-red-500">Failed to load files.</div>`;
+    }
   }
 }
 
@@ -337,8 +557,33 @@ function renderBreadcrumbs() {
   nav.innerHTML = html;
 }
 
+function getFileTypeDescription(filename, mime) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = {
+    pdf: 'PDF Document',
+    doc: 'Word Document', docx: 'Word Document',
+    xls: 'Excel Spreadsheet', xlsx: 'Excel Spreadsheet',
+    ppt: 'PowerPoint Presentation', pptx: 'PowerPoint Presentation',
+    jpg: 'JPEG Image', jpeg: 'JPEG Image', png: 'PNG Image', gif: 'GIF Image', webp: 'WebP Image', svg: 'SVG Image',
+    mp4: 'MP4 Video', mkv: 'MKV Video', webm: 'WebM Video', mov: 'QuickTime Movie',
+    mp3: 'MP3 Audio', wav: 'WAV Audio', ogg: 'OGG Audio', flac: 'FLAC Audio',
+    zip: 'ZIP Archive', rar: 'RAR Archive', '7z': '7Z Archive', tar: 'TAR Archive', gz: 'GZIP Archive',
+    txt: 'Text Document', json: 'JSON File', js: 'JavaScript File', ts: 'TypeScript File', py: 'Python Script',
+    html: 'HTML Document', css: 'CSS Stylesheet', php: 'PHP Script', sql: 'SQL Database File',
+  };
+  return map[ext] || (mime ? mime.split('/')[1]?.toUpperCase() + ' File' : `${ext.toUpperCase()} File`);
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function renderFileExplorer() {
   const container = document.getElementById('file-explorer-content');
+  if (!container) return;
   
   // Filter by search query if any
   let filteredFolders = state.folders;
@@ -349,14 +594,18 @@ function renderFileExplorer() {
     filteredFiles = filteredFiles.filter(f => f.name.toLowerCase().includes(q));
   }
 
-  if (filteredFolders.length === 0 && filteredFiles.length === 0) {
+  const sortedFolders = [...filteredFolders].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedFiles = [...filteredFiles].sort((a, b) => a.name.localeCompare(b.name));
+  const totalItems = sortedFolders.length + sortedFiles.length;
+
+  if (totalItems === 0) {
     container.innerHTML = `
       <div class="py-16 text-center text-slate-400">
         <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 text-2xl">
           <i class="fa-regular fa-folder-open"></i>
         </div>
-        <p class="font-medium text-slate-600">No files or folders here</p>
-        <p class="text-sm text-slate-400 mt-1">Drag and drop files or folder above, or click Upload to get started!</p>
+        <p class="font-medium text-slate-600">This folder is empty</p>
+        <p class="text-sm text-slate-400 mt-1">Drag and drop files here, or use the Upload button above.</p>
       </div>
     `;
     return;
@@ -364,88 +613,146 @@ function renderFileExplorer() {
 
   let html = '';
 
-  // Folders section
-  if (filteredFolders.length > 0) {
-    html += `
-      <div class="mb-6">
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Folders (${filteredFolders.length})</h3>
-        <div class="${state.viewMode === 'list' ? 'space-y-1.5' : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3'}">
-          ${filteredFolders.map(f => `
-            <div ondblclick="loadFiles(${f.id})" onclick="selectItem(this)" class="group bg-white hover:bg-blue-50/50 border border-slate-200/80 hover:border-blue-300 rounded-xl ${state.viewMode === 'list' ? 'p-2.5' : 'p-3'} flex items-center justify-between cursor-pointer transition shadow-xs hover:shadow-sm">
-              <div class="flex items-center space-x-2.5 truncate">
-                <i class="fa-solid fa-folder text-amber-500 ${state.viewMode === 'list' ? 'text-base' : 'text-lg'}"></i>
-                <span class="text-xs sm:text-sm font-medium text-slate-700 group-hover:text-blue-600 truncate">${escapeHtml(f.name)}</span>
-                ${f.is_public ? '<i class="fa-solid fa-globe text-emerald-500 text-[10px] ml-1.5 shrink-0" title="Public Shared Folder Link Active"></i>' : ''}
-              </div>
-              <button onclick="showContextMenu(event, 'folder', ${f.id})" class="text-slate-400 hover:text-slate-600 p-1 opacity-70 group-hover:opacity-100 transition">
-                <i class="fa-solid fa-ellipsis-vertical"></i>
-              </button>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  }
+  // Unified Header Counter
+  html += `
+    <div class="flex items-center justify-between text-xs text-slate-400 mb-3 px-1 font-medium">
+      <span>${totalItems} ${totalItems === 1 ? 'item' : 'items'} (${sortedFolders.length} folders, ${sortedFiles.length} files)</span>
+    </div>
+  `;
 
-  // Files section
-  if (filteredFiles.length > 0) {
+  if (state.viewMode === 'grid') {
+    // Windows 11 Unified Grid View
+    html += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">`;
+
+    // 1. Folders in grid
+    sortedFolders.forEach(f => {
+      html += `
+        <div ondblclick="loadFiles(${f.id})" oncontextmenu="showContextMenu(event, 'folder', ${f.id})" onclick="selectItem(this)" class="group bg-white hover:bg-blue-50/40 border border-slate-200/90 hover:border-blue-400/80 rounded-2xl p-4 flex flex-col justify-between cursor-pointer transition shadow-2xs hover:shadow-md relative select-none">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 border border-amber-200/60 flex items-center justify-center text-2xl shrink-0 group-hover:scale-105 transition shadow-xs">
+              <i class="fa-solid fa-folder"></i>
+            </div>
+            <button onclick="showContextMenu(event, 'folder', ${f.id})" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition opacity-80 group-hover:opacity-100" title="Options">
+              <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-blue-600 truncate mb-1" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</h4>
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span class="font-medium text-slate-400">Folder</span>
+              ${f.is_public ? '<span class="text-emerald-600 font-bold flex items-center gap-1 text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200"><i class="fa-solid fa-globe text-[9px]"></i> Public</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    // 2. Files in grid
+    sortedFiles.forEach(file => {
+      const iconInfo = getFileIcon(file.name, file.mime_type);
+      const sizeStr = formatBytes(file.size_bytes);
+      html += `
+        <div ondblclick="openFilePreview(${file.id})" oncontextmenu="showContextMenu(event, 'file', ${file.id})" onclick="selectItem(this)" class="group bg-white hover:bg-blue-50/40 border border-slate-200/90 hover:border-blue-400/80 rounded-2xl p-4 flex flex-col justify-between cursor-pointer transition shadow-2xs hover:shadow-md relative select-none">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-11 h-11 rounded-2xl ${iconInfo.bg} ${iconInfo.color} flex items-center justify-center text-2xl shrink-0 group-hover:scale-105 transition shadow-xs">
+              <i class="${iconInfo.icon}"></i>
+            </div>
+            <button onclick="showContextMenu(event, 'file', ${file.id})" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition opacity-80 group-hover:opacity-100" title="Options">
+              <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-blue-600 truncate mb-1" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</h4>
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span class="font-mono text-slate-400">${sizeStr}</span>
+              ${file.is_public ? '<span class="text-emerald-600 font-bold flex items-center gap-1 text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200"><i class="fa-solid fa-globe text-[9px]"></i> Public</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  } else {
+    // Windows Explorer Details Table View
     html += `
-      <div>
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Files (${filteredFiles.length})</h3>
-        ${state.viewMode === 'list' ? `
-          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 shadow-xs">
-            ${filteredFiles.map(file => {
-              const iconInfo = getFileIcon(file.name, file.mime_type);
-              const sizeStr = formatBytes(file.size_bytes);
-              return `
-                <div ondblclick="openFilePreview(${file.id})" class="p-3 hover:bg-slate-50 flex items-center justify-between cursor-pointer transition">
-                  <div class="flex items-center space-x-3 truncate">
-                    <div class="w-8 h-8 rounded-lg ${iconInfo.bg} ${iconInfo.color} flex items-center justify-center text-sm shrink-0">
-                      <i class="${iconInfo.icon}"></i>
-                    </div>
-                    <div class="truncate">
-                      <span class="text-xs sm:text-sm font-medium text-slate-800 truncate block" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
-                      <span class="text-[10px] text-slate-400">${file.mime_type || 'File'}</span>
-                    </div>
-                  </div>
-                  <div class="flex items-center space-x-4 shrink-0">
-                    <span class="text-xs text-slate-500 font-mono">${sizeStr}</span>
-                    ${file.is_public ? '<span class="text-[10px] text-emerald-600 font-bold px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200">Public</span>' : ''}
-                    <button onclick="showContextMenu(event, 'file', ${file.id})" class="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100">
-                      <i class="fa-solid fa-ellipsis-vertical"></i>
-                    </button>
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        ` : `
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            ${filteredFiles.map(file => {
-              const iconInfo = getFileIcon(file.name, file.mime_type);
-              const sizeStr = formatBytes(file.size_bytes);
-              return `
-                <div ondblclick="openFilePreview(${file.id})" class="group bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between cursor-pointer transition shadow-xs hover:shadow-md relative">
-                  <div class="flex items-start justify-between mb-3">
-                    <div class="w-10 h-10 rounded-xl ${iconInfo.bg} ${iconInfo.color} flex items-center justify-center text-xl">
-                      <i class="${iconInfo.icon}"></i>
-                    </div>
-                    <button onclick="showContextMenu(event, 'file', ${file.id})" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition">
-                      <i class="fa-solid fa-ellipsis-vertical"></i>
-                    </button>
-                  </div>
-                  <div>
-                    <h4 class="text-xs sm:text-sm font-medium text-slate-800 truncate mb-1" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</h4>
-                    <div class="flex items-center justify-between text-[11px] text-slate-400">
-                      <span>${sizeStr}</span>
-                      ${file.is_public ? '<span class="text-emerald-600 font-medium flex items-center"><i class="fa-solid fa-globe mr-1 text-[10px]"></i> Public</span>' : ''}
-                    </div>
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        `}
+      <div class="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-600">
+            <thead class="bg-slate-50/80 border-b border-slate-200/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+              <tr>
+                <th class="py-3 px-4 font-semibold">Name</th>
+                <th class="py-3 px-4 font-semibold hidden sm:table-cell">Date modified</th>
+                <th class="py-3 px-4 font-semibold hidden md:table-cell">Type</th>
+                <th class="py-3 px-4 font-semibold">Size</th>
+                <th class="py-3 px-4 font-semibold hidden lg:table-cell">Visibility</th>
+                <th class="py-3 px-4 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+    `;
+
+    // 1. Folders in details table
+    sortedFolders.forEach(f => {
+      html += `
+        <tr ondblclick="loadFiles(${f.id})" oncontextmenu="showContextMenu(event, 'folder', ${f.id})" class="hover:bg-blue-50/30 cursor-pointer transition group select-none">
+          <td class="py-3 px-4 font-medium text-slate-800">
+            <div class="flex items-center space-x-3 truncate max-w-xs sm:max-w-md">
+              <div class="w-7 h-7 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center text-sm shrink-0">
+                <i class="fa-solid fa-folder"></i>
+              </div>
+              <span class="truncate font-semibold group-hover:text-blue-600">${escapeHtml(f.name)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-slate-400 hidden sm:table-cell font-mono text-[11px]">${formatDate(f.created_at)}</td>
+          <td class="py-3 px-4 text-slate-500 hidden md:table-cell">File folder</td>
+          <td class="py-3 px-4 text-slate-400 font-mono text-[11px]">-</td>
+          <td class="py-3 px-4 hidden lg:table-cell">
+            ${f.is_public ? '<span class="text-emerald-600 font-bold text-[10px] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1"><i class="fa-solid fa-globe text-[9px]"></i> Public</span>' : '<span class="text-slate-400 text-[11px]">Private</span>'}
+          </td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="showContextMenu(event, 'folder', ${f.id})" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition">
+              <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+
+    // 2. Files in details table
+    sortedFiles.forEach(file => {
+      const iconInfo = getFileIcon(file.name, file.mime_type);
+      const sizeStr = formatBytes(file.size_bytes);
+      const typeDesc = getFileTypeDescription(file.name, file.mime_type);
+      html += `
+        <tr ondblclick="openFilePreview(${file.id})" oncontextmenu="showContextMenu(event, 'file', ${file.id})" class="hover:bg-blue-50/30 cursor-pointer transition group select-none">
+          <td class="py-3 px-4 font-medium text-slate-800">
+            <div class="flex items-center space-x-3 truncate max-w-xs sm:max-w-md">
+              <div class="w-7 h-7 rounded-lg ${iconInfo.bg} ${iconInfo.color} flex items-center justify-center text-sm shrink-0">
+                <i class="${iconInfo.icon}"></i>
+              </div>
+              <span class="truncate font-semibold group-hover:text-blue-600">${escapeHtml(file.name)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-slate-400 hidden sm:table-cell font-mono text-[11px]">${formatDate(file.created_at)}</td>
+          <td class="py-3 px-4 text-slate-500 hidden md:table-cell">${typeDesc}</td>
+          <td class="py-3 px-4 text-slate-600 font-mono text-[11px]">${sizeStr}</td>
+          <td class="py-3 px-4 hidden lg:table-cell">
+            ${file.is_public ? '<span class="text-emerald-600 font-bold text-[10px] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1"><i class="fa-solid fa-globe text-[9px]"></i> Public</span>' : '<span class="text-slate-400 text-[11px]">Private</span>'}
+          </td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="showContextMenu(event, 'file', ${file.id})" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition">
+              <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -627,7 +934,7 @@ function renderSharedView() {
         </div>
         <div class="flex items-center justify-between pt-2 border-t border-slate-100">
           <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Shared Folder</span>
-          <a href="share.php?folder=${f.share_token}" target="_blank" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-semibold">
+          <a href="/share/${f.share_token}" target="_blank" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-semibold">
             View Link
           </a>
         </div>
@@ -647,7 +954,7 @@ function renderSharedView() {
         </div>
         <div class="flex items-center justify-between pt-2 border-t border-slate-100">
           <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Shared File</span>
-          <a href="share.php?token=${f.share_token}" target="_blank" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-semibold">
+          <a href="/share/${f.share_token}" target="_blank" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-semibold">
             View Link
           </a>
         </div>
@@ -829,7 +1136,7 @@ async function sendResumableChunk(uploadUrl, contentRange, chunk) {
 
 async function startDedicatedTempUpload() {
   if (state.tempFiles.length === 0) {
-    alert('Please select at least one file or folder for temporary upload.');
+    showInAppToast('Please select at least one file or folder for temporary upload.', 'error');
     return;
   }
 
@@ -852,7 +1159,7 @@ async function startDedicatedTempUpload() {
       if (progressFilename) progressFilename.textContent = `(${i + 1}/${state.tempFiles.length}) ${file.name}`;
 
       // 1. Initiate Resumable Upload
-      const initRes = await fetch('api/temp_upload.php?action=init_upload', {
+      const initRes = await apiFetch('api/temp_upload.php?action=init_upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -918,7 +1225,7 @@ async function startDedicatedTempUpload() {
     }
 
     // 3. Finalize Temp Upload record
-    const createRes = await fetch('api/temp_upload.php?action=create', {
+    const createRes = await apiFetch('api/temp_upload.php?action=create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -947,11 +1254,13 @@ async function startDedicatedTempUpload() {
     if (openBtn) openBtn.href = createData.share_url;
     if (expiryText) expiryText.textContent = `Expires in ${formatMinutes(createData.expiry_minutes)} • Permanent Google Drive wipe at ${createData.expires_at}`;
 
+    showInAppToast('Temporary files uploaded successfully!', 'success');
+
     // Refresh active temp uploads list below
     loadMyTempUploads();
 
   } catch (err) {
-    alert('Temp Upload Error: ' + err.message);
+    showInAppToast('Temp Upload Error: ' + err.message, 'error');
     document.getElementById('dedicated-temp-progress')?.classList.add('hidden');
     document.getElementById('dedicated-temp-select')?.classList.remove('hidden');
   }
@@ -961,7 +1270,7 @@ function copyDedicatedTempLink() {
   const input = document.getElementById('dedicated-success-link-input');
   if (input && input.value) {
     navigator.clipboard.writeText(input.value).then(() => {
-      alert('Temporary share link copied to clipboard!');
+      showInAppToast('Temporary share link copied to clipboard!', 'success');
     });
   }
 }
@@ -991,7 +1300,7 @@ async function loadMyTempUploads() {
   if (!container) return;
 
   try {
-    const res = await fetch('api/temp_upload.php?action=my_uploads');
+    const res = await apiFetch('api/temp_upload.php?action=my_uploads');
     const data = await res.json();
 
     if (!data.success || !data.uploads || data.uploads.length === 0) {
@@ -1008,7 +1317,7 @@ async function loadMyTempUploads() {
     }
 
     container.innerHTML = data.uploads.map(u => {
-      const shareUrl = `${window.location.origin}/temp.php?token=${u.share_token}`;
+      const shareUrl = `${window.location.origin}/share/${u.share_token}`;
       return `
         <div class="bg-white border border-slate-200/90 hover:border-amber-400 rounded-3xl p-5 shadow-xs hover:shadow-md transition flex flex-col justify-between space-y-4">
           <div>
@@ -1039,11 +1348,11 @@ async function loadMyTempUploads() {
           </div>
 
           <div class="flex items-center space-x-2 pt-1 border-t border-slate-100">
-            <button onclick="navigator.clipboard.writeText('${shareUrl}').then(() => alert('Link copied!'))" class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition flex items-center justify-center space-x-1">
+            <button onclick="navigator.clipboard.writeText('${shareUrl}').then(() => showInAppToast('Link copied!', 'success'))" class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition flex items-center justify-center space-x-1">
               <i class="fa-solid fa-copy text-[11px] text-amber-500"></i>
               <span>Copy</span>
             </button>
-            <a href="temp.php?token=${u.share_token}" target="_blank" class="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs rounded-xl transition flex items-center justify-center space-x-1">
+            <a href="/share/${u.share_token}" target="_blank" class="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs rounded-xl transition flex items-center justify-center space-x-1">
               <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
               <span>Open</span>
             </a>
@@ -1090,24 +1399,76 @@ function formatSecondsToCountdown(sec) {
 }
 
 async function deleteTempUpload(id) {
-  if (!confirm('Permanently delete this transfer and wipe all files from Google Drive right now?')) return;
+  const ok = await showInAppConfirm({
+    title: 'Delete Temporary Transfer?',
+    message: 'Permanently delete this transfer and wipe all associated files from Google Drive right now?',
+    isDanger: true,
+    confirmText: 'Delete Now',
+  });
+  if (!ok) return;
+
   try {
-    const res = await fetch('api/temp_upload.php?action=delete', {
+    const res = await apiFetch('api/temp_upload.php?action=delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: id })
     });
     const data = await res.json();
     if (data.success) {
+      showInAppToast('Transfer deleted and Google Drive wiped', 'success');
       loadMyTempUploads();
     } else {
-      alert('Delete error: ' + (data.error || 'Failed'));
+      showInAppToast('Delete error: ' + (data.error || 'Failed'), 'error');
     }
   } catch (e) {
-    alert('Network error: ' + e.message);
+    showInAppToast('Network error: ' + e.message, 'error');
   }
 }
 
+
+// Active upload abort controllers map
+window.activeUploadControllers = {};
+
+window.cancelDirectUpload = async function(uploadId) {
+  const confirmed = await showInAppConfirm({
+    title: 'Cancel Upload?',
+    message: 'Are you sure you want to cancel this upload? The incomplete upload will be discarded immediately.',
+    isDanger: true,
+    confirmText: 'Cancel Upload',
+  });
+  if (!confirmed) return;
+
+  const handle = window.activeUploadControllers[uploadId];
+  if (handle) {
+    handle.aborted = true;
+    if (handle.controller) {
+      try { handle.controller.abort(); } catch {}
+    }
+  }
+
+  await removeUploadFromDB(uploadId);
+
+  const item = document.getElementById(uploadId);
+  if (item) {
+    const bar = item.querySelector('.upload-bar');
+    const status = item.querySelector('.upload-status');
+    const pct = item.querySelector('.upload-percent');
+    if (bar) bar.className = 'upload-bar bg-rose-500 h-1.5 rounded-full';
+    if (status) status.innerHTML = '<span class="text-rose-500 font-semibold">Cancelled</span>';
+    if (pct) pct.textContent = '';
+    setTimeout(() => {
+      item.remove();
+      const itemsContainer = document.getElementById('upload-dock-items');
+      if (itemsContainer && itemsContainer.children.length === 0) {
+        document.getElementById('upload-dock')?.classList.add('hidden');
+      }
+    }, 1200);
+  }
+
+  delete window.activeUploadControllers[uploadId];
+  activeUploadsCount = Math.max(0, activeUploadsCount - 1);
+  showInAppToast('Upload cancelled. Incomplete file discarded.', 'info');
+};
 
 /**
  * Direct Browser-to-Google Drive Chunked Resumable Upload
@@ -1116,6 +1477,12 @@ async function deleteTempUpload(id) {
 async function startDirectUpload(file, existingRecord = null) {
   const uploadId = existingRecord ? existingRecord.id : ('upload_' + Math.random().toString(36).substr(2, 9));
   
+  const uploadController = new AbortController();
+  window.activeUploadControllers[uploadId] = {
+    aborted: false,
+    controller: uploadController,
+  };
+
   // Render upload card in bottom dock
   createUploadDockItem(uploadId, file);
   updateUploadDockProgress(uploadId, existingRecord?.percent || 0, existingRecord ? 'Resuming background upload...' : 'Connecting...');
@@ -1150,7 +1517,8 @@ async function startDirectUpload(file, existingRecord = null) {
 
     // Step 1: Request Google Resumable Upload Session URI if needed
     if (!uploadUrl) {
-      const initRes = await fetch('api/upload_init.php', {
+      if (window.activeUploadControllers[uploadId]?.aborted) return;
+      const initRes = await apiFetch('api/upload_init.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1160,6 +1528,7 @@ async function startDirectUpload(file, existingRecord = null) {
           folder_id: targetFolderId,
           origin: window.location.origin,
         }),
+        signal: uploadController.signal,
       });
 
       const initData = await initRes.json();
@@ -1177,6 +1546,8 @@ async function startDirectUpload(file, existingRecord = null) {
         shareToken,
       });
     }
+
+    if (window.activeUploadControllers[uploadId]?.aborted) return;
 
     // Ping Service Worker for background persistence
     if (navigator.serviceWorker?.controller) {
@@ -1199,10 +1570,12 @@ async function startDirectUpload(file, existingRecord = null) {
           probeRes = await fetch(uploadUrl, {
             method: 'PUT',
             headers: { 'Content-Range': `bytes */${total}` },
+            signal: uploadController.signal,
           });
         } catch {
-          probeRes = await fetch(`api/upload_chunk.php?upload_url=${encodeURIComponent(uploadUrl)}&range=${encodeURIComponent(`bytes */${total}`)}`, {
+          probeRes = await apiFetch(`api/upload_chunk.php?upload_url=${encodeURIComponent(uploadUrl)}&range=${encodeURIComponent(`bytes */${total}`)}`, {
             method: 'POST',
+            signal: uploadController.signal,
           });
         }
         if (probeRes.status === 308) {
@@ -1219,6 +1592,7 @@ async function startDirectUpload(file, existingRecord = null) {
           start = total;
         }
       } catch (probeErr) {
+        if (window.activeUploadControllers[uploadId]?.aborted) return;
         console.warn('Probe check fallback:', probeErr);
       }
     }
@@ -1226,6 +1600,11 @@ async function startDirectUpload(file, existingRecord = null) {
     // Step 3: Stream file in chunks directly or via relay
     const CHUNK_SIZE = 2 * 1024 * 1024;
     while (start < total) {
+      if (window.activeUploadControllers[uploadId]?.aborted) {
+        await removeUploadFromDB(uploadId);
+        return;
+      }
+
       const end = Math.min(start + CHUNK_SIZE, total);
       const chunk = file.slice(start, end);
       const contentRange = `bytes ${start}-${end - 1}/${total}`;
@@ -1239,8 +1618,13 @@ async function startDirectUpload(file, existingRecord = null) {
             'Content-Range': contentRange,
           },
           body: chunk,
+          signal: uploadController.signal,
         });
       } catch (corsErr) {
+        if (window.activeUploadControllers[uploadId]?.aborted) {
+          await removeUploadFromDB(uploadId);
+          return;
+        }
         // Attempt 2: Relay chunk through server
         const relayUrl = `api/upload_chunk.php?upload_url=${encodeURIComponent(uploadUrl)}`;
         response = await fetch(relayUrl, {
@@ -1249,7 +1633,13 @@ async function startDirectUpload(file, existingRecord = null) {
             'Content-Range': contentRange,
           },
           body: chunk,
+          signal: uploadController.signal,
         });
+      }
+
+      if (window.activeUploadControllers[uploadId]?.aborted) {
+        await removeUploadFromDB(uploadId);
+        return;
       }
 
       start = end;
@@ -1261,11 +1651,16 @@ async function startDirectUpload(file, existingRecord = null) {
 
       // Google returns 200 or 201 when upload is completely finished
       if (response.status === 200 || response.status === 201) {
+        if (window.activeUploadControllers[uploadId]?.aborted) {
+          await removeUploadFromDB(uploadId);
+          return;
+        }
+
         const googleFileInfo = await response.json();
         const googleFileId = googleFileInfo.id;
 
-        // Step 4: Record file in database and update Google Account storage quota
-        await fetch('api/upload_finish.php', {
+        // Step 4: Record file in database and update Google Account storage quota (ONLY when 100% complete)
+        const finishRes = await apiFetch('api/upload_finish.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1278,19 +1673,37 @@ async function startDirectUpload(file, existingRecord = null) {
             share_token: shareToken,
           }),
         });
+        const finishData = await finishRes.json();
 
         // Clean up from IndexedDB
         await removeUploadFromDB(uploadId);
-
         finishUploadDockItem(uploadId);
-        loadFiles(state.currentFolderId);
+        delete window.activeUploadControllers[uploadId];
+
+        // Instant optimistic addition to explorer (0ms delay!)
+        if (finishData.success && finishData.file) {
+          if (state.currentFolderId === targetFolderId) {
+            state.files.unshift(finishData.file);
+            state.totalUserBytes += file.size;
+            renderFileExplorer();
+            updateStorageDisplay();
+          }
+        }
+
+        // Silent background sync
+        loadFiles(state.currentFolderId, true);
         break;
       }
     }
   } catch (err) {
+    if (window.activeUploadControllers[uploadId]?.aborted) {
+      await removeUploadFromDB(uploadId);
+      return;
+    }
     console.error('Upload error:', err);
     markUploadDockError(uploadId, err.message + ' (Auto-resumes when reconnected)');
   } finally {
+    delete window.activeUploadControllers[uploadId];
     activeUploadsCount = Math.max(0, activeUploadsCount - 1);
   }
 }
@@ -1306,11 +1719,16 @@ function createUploadDockItem(id, file) {
   item.className = 'bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex flex-col space-y-2';
   item.innerHTML = `
     <div class="flex items-center justify-between text-xs">
-      <div class="flex items-center space-x-2 truncate max-w-[200px]">
+      <div class="flex items-center space-x-2 truncate max-w-[190px]">
         <i class="fa-regular fa-file text-blue-500"></i>
-        <span class="font-medium text-slate-800 truncate">${escapeHtml(file.name)}</span>
+        <span class="font-medium text-slate-800 truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
       </div>
-      <span class="text-slate-400">${formatBytes(file.size)}</span>
+      <div class="flex items-center space-x-2 shrink-0">
+        <span class="text-slate-400 font-mono text-[11px]">${formatBytes(file.size)}</span>
+        <button onclick="cancelDirectUpload('${id}')" class="text-slate-400 hover:text-rose-500 p-1 rounded-md hover:bg-slate-100 transition" title="Cancel upload">
+          <i class="fa-solid fa-xmark text-xs"></i>
+        </button>
+      </div>
     </div>
     <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
       <div class="upload-bar bg-blue-600 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
@@ -1427,21 +1845,38 @@ async function ctxOpen() {
   }
 }
 
-function ctxRename() {
+async function ctxRename() {
   if (!currentContextItem) return;
   const target = { ...currentContextItem };
   hideContextMenu();
-  const newName = prompt('Enter new name:', target.name);
-  if (newName && newName.trim() && newName !== target.name) {
-    fetch('api/files.php?action=rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: target.type,
-        id: target.id,
-        new_name: newName.trim(),
-      }),
-    }).then(() => loadFiles(state.currentFolderId));
+  const newName = await showInAppPrompt({
+    title: `Rename ${target.type === 'folder' ? 'Folder' : 'File'}`,
+    message: `Enter new name for "${target.name}":`,
+    defaultValue: target.name,
+    confirmText: 'Rename',
+  });
+  if (newName && newName.trim() && newName.trim() !== target.name) {
+    try {
+      const res = await apiFetch('api/files.php?action=rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: target.type,
+          id: target.id,
+          new_name: newName.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showInAppToast(`Renamed to "${newName.trim()}"`, 'success');
+      } else {
+        showInAppToast(data.error || 'Failed to rename', 'error');
+      }
+    } catch (err) {
+      showInAppToast('Rename error: ' + err.message, 'error');
+    } finally {
+      loadFiles(state.currentFolderId, true);
+    }
   }
 }
 
@@ -1450,7 +1885,13 @@ async function ctxDelete() {
   const target = { ...currentContextItem };
   hideContextMenu();
 
-  if (!confirm(`Are you sure you want to delete "${target.name}"?`)) return;
+  const ok = await showInAppConfirm({
+    title: `Delete ${target.type === 'folder' ? 'Folder' : 'File'}?`,
+    message: `Are you sure you want to permanently delete "${target.name}" from Google Drive and CloudDrive?`,
+    isDanger: true,
+    confirmText: 'Delete Permanently',
+  });
+  if (!ok) return;
 
   // Optimistic UI update: immediately remove from screen so user sees instant deletion
   if (target.type === 'file') {
@@ -1461,7 +1902,7 @@ async function ctxDelete() {
   renderFileExplorer();
 
   try {
-    const res = await fetch('api/files.php?action=delete', {
+    const res = await apiFetch('api/files.php?action=delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1471,12 +1912,15 @@ async function ctxDelete() {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.error || 'Failed to delete file');
+      showInAppToast(data.error || 'Failed to delete', 'error');
+    } else {
+      showInAppToast(`"${target.name}" deleted successfully`, 'success');
     }
   } catch (err) {
     console.error('Delete error:', err);
+    showInAppToast('Delete error: ' + err.message, 'error');
   } finally {
-    loadFiles(state.currentFolderId);
+    loadFiles(state.currentFolderId, true);
   }
 }
 
@@ -1484,12 +1928,13 @@ async function ctxCopy() {
   if (!currentContextItem || currentContextItem.type !== 'file') return;
   const target = { ...currentContextItem };
   hideContextMenu();
-  await fetch('api/files.php?action=copy', {
+  await apiFetch('api/files.php?action=copy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ file_id: target.id }),
   });
-  loadFiles(state.currentFolderId);
+  showInAppToast(`Copied "${target.name}"`, 'success');
+  loadFiles(state.currentFolderId, true);
 }
 
 function ctxShare() {
@@ -1506,11 +1951,11 @@ function ctxShare() {
   if (target.type === 'folder') {
     if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-folder-open text-amber-500 mr-2"></i> Share Folder "${escapeHtml(target.name)}"`;
     if (descEl) descEl.textContent = 'Anyone with this link can view and download all files inside this folder, including any new uploads in the future!';
-    shareUrl = target.shareToken ? `${window.location.origin}/share.php?folder=${target.shareToken}` : `${window.location.origin}/share.php`;
+    shareUrl = target.shareToken ? `${window.location.origin}/share/${target.shareToken}` : `${window.location.origin}/share`;
   } else {
     if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-share-nodes text-blue-500 mr-2"></i> Share File "${escapeHtml(target.name)}"`;
     if (descEl) descEl.textContent = 'Anyone with this link can view and download this file directly.';
-    shareUrl = `${window.location.origin}/share.php?token=${target.shareToken}`;
+    shareUrl = `${window.location.origin}/share/${target.shareToken}`;
   }
 
   linkInput.value = shareUrl;
@@ -1535,30 +1980,60 @@ async function handleShareToggle() {
     payload.file_id = currentContextItem.id;
   }
 
-  const res = await fetch('api/files.php?action=toggle_share', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (data.success && data.share_token) {
-    currentContextItem.shareToken = data.share_token;
-    const linkInput = document.getElementById('share-link-input');
-    if (currentContextItem.type === 'folder') {
-      linkInput.value = `${window.location.origin}/share.php?folder=${data.share_token}`;
-    } else {
-      linkInput.value = `${window.location.origin}/share.php?token=${data.share_token}`;
+  try {
+    const res = await apiFetch('api/files.php?action=toggle_share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success && data.share_token) {
+      currentContextItem.shareToken = data.share_token;
+      const linkInput = document.getElementById('share-link-input');
+      if (linkInput) linkInput.value = `${window.location.origin}/share/${data.share_token}`;
     }
+    currentContextItem.isPublic = isPublic;
+
+    // Update local state directly so explorer updates immediately without refresh
+    if (currentContextItem.type === 'folder') {
+      const item = state.folders.find(f => f.id === currentContextItem.id);
+      if (item) {
+        item.is_public = isPublic;
+        if (data.share_token) item.share_token = data.share_token;
+      }
+    } else {
+      const item = state.files.find(f => f.id === currentContextItem.id);
+      if (item) {
+        item.is_public = isPublic;
+        if (data.share_token) item.share_token = data.share_token;
+      }
+    }
+    renderFileExplorer();
+    showInAppToast(`Public sharing turned ${isPublic ? 'ON' : 'OFF'}`, isPublic ? 'success' : 'info');
+  } catch (err) {
+    showInAppToast('Failed to update share setting', 'error');
+  } finally {
+    loadFiles(state.currentFolderId, true);
   }
-  currentContextItem.isPublic = isPublic;
-  loadFiles(state.currentFolderId);
 }
 
-function copyShareLink() {
+async function copyShareLink() {
+  const toggle = document.getElementById('share-public-toggle');
   const linkInput = document.getElementById('share-link-input');
+  if (!linkInput) return;
+
+  // If sharing is not enabled yet, automatically enable it!
+  if (toggle && !toggle.checked) {
+    toggle.checked = true;
+    await handleShareToggle();
+  }
+
   linkInput.select();
-  navigator.clipboard.writeText(linkInput.value);
-  alert('Share link copied to clipboard!');
+  navigator.clipboard.writeText(linkInput.value).then(() => {
+    showInAppToast('Share link copied to clipboard! Public sharing is active.', 'success');
+  }).catch(() => {
+    showInAppToast('Failed to copy share link', 'error');
+  });
 }
 
 function ctxDownload() {
@@ -1576,20 +2051,56 @@ function promptNewFolder() {
 
 async function handleCreateFolder(e) {
   e.preventDefault();
-  const name = document.getElementById('new-folder-name').value.trim();
+  const nameInput = document.getElementById('new-folder-name');
+  const name = nameInput.value.trim();
   if (!name) return;
 
-  await fetch('api/files.php?action=create_folder', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      parent_id: state.currentFolderId,
-    }),
-  });
+  const tempId = 'temp_' + Date.now();
+  const tempFolder = {
+    id: tempId,
+    name: name,
+    parent_id: state.currentFolderId,
+    share_token: '',
+    is_public: 0,
+    created_at: new Date().toISOString()
+  };
 
+  // 1. Instant optimistic visual rendering (0ms delay!)
+  state.folders.unshift(tempFolder);
+  renderFileExplorer();
   document.getElementById('new-folder-modal').classList.add('hidden');
-  loadFiles(state.currentFolderId);
+  nameInput.value = '';
+
+  // 2. Perform backend API call asynchronously
+  try {
+    const res = await apiFetch('api/files.php?action=create_folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        parent_id: state.currentFolderId,
+      }),
+    });
+    const data = await res.json();
+    if (data.success && data.folder) {
+      const idx = state.folders.findIndex(f => f.id === tempId);
+      if (idx !== -1) {
+        state.folders[idx] = data.folder;
+      }
+      renderFileExplorer();
+      showInAppToast(`Folder "${name}" created`, 'success');
+      loadFiles(state.currentFolderId, true);
+    } else {
+      // Revert if failed
+      state.folders = state.folders.filter(f => f.id !== tempId);
+      renderFileExplorer();
+      showInAppToast(data.error || 'Failed to create folder', 'error');
+    }
+  } catch (err) {
+    state.folders = state.folders.filter(f => f.id !== tempId);
+    renderFileExplorer();
+    showInAppToast('Server error creating folder: ' + err.message, 'error');
+  }
 }
 
 // --- INTEGRATED IN-APP PREVIEWERS ---
@@ -1684,7 +2195,7 @@ function openFilePreview(fileId) {
         content.innerHTML = `
           <div class="w-full max-h-[75vh] bg-slate-900 text-slate-100 p-6 rounded-2xl font-mono text-xs overflow-auto whitespace-pre-wrap shadow-2xl border border-slate-800">
             <div class="flex justify-end pb-3 mb-3 border-b border-slate-800">
-              <button onclick="navigator.clipboard.writeText(this.closest('.bg-slate-900').querySelector('pre').innerText); alert('Copied code to clipboard!');" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition">
+              <button onclick="navigator.clipboard.writeText(this.closest('.bg-slate-900').querySelector('pre').innerText); showInAppToast('Copied code to clipboard!', 'success');" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition">
                 <i class="fa-solid fa-copy mr-1"></i> Copy
               </button>
             </div>
@@ -1723,7 +2234,7 @@ let currentModalVideoFileId = null;
 function loadModalVideoQualities(fileId) {
   currentModalVideoFileId = fileId;
   currentModalQuality = 'auto';
-  fetch(`api/files.php?action=video_qualities&file_id=${fileId}`)
+  apiFetch(`api/files.php?action=video_qualities&file_id=${fileId}`)
     .then(r => r.json())
     .then(data => {
       if (data.success && data.qualities) {

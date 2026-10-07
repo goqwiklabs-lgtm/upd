@@ -5,9 +5,21 @@
 document.addEventListener('DOMContentLoaded', () => {
   loadAdminStats();
   loadGoogleAccounts();
+
+  // 100% Realtime Admin Sync: automatically poll and update stats without requiring manual page reload
+  setInterval(() => {
+    loadAdminStats(true);
+    const activeTab = document.querySelector('[id^="tab-content-"]:not(.hidden)');
+    if (activeTab && activeTab.id === 'tab-content-accounts') {
+      loadGoogleAccounts(true);
+    }
+  }, 3500);
 });
 
+let currentAdminTab = 'accounts';
+
 function switchAdminTab(tab) {
+  currentAdminTab = tab;
   const tabs = ['accounts', 'files', 'users'];
   tabs.forEach(t => {
     const btn = document.getElementById(`tab-btn-${t}`);
@@ -23,6 +35,7 @@ function switchAdminTab(tab) {
 
   if (tab === 'files') loadGlobalFiles();
   if (tab === 'users') loadUsersList();
+  if (tab === 'accounts') loadGoogleAccounts();
 }
 
 function formatBytes(bytes, decimals = 2) {
@@ -34,35 +47,45 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-async function loadAdminStats() {
+async function loadAdminStats(silent = false) {
   try {
     const res = await fetch('api/admin.php?action=stats');
     if (res.status === 403) {
-      alert('Access denied. Administrator privileges required.');
+      if (!silent) {
+        if (window.showInAppToast) window.showInAppToast('Access denied. Administrator privileges required.', 'error');
+      }
       window.location.href = 'index.php';
       return;
     }
     const data = await res.json();
     if (data.success) {
       const s = data.stats;
-      document.getElementById('stat-accounts').textContent = s.active_google_accounts;
+      const accEl = document.getElementById('stat-accounts');
+      if (accEl) accEl.textContent = s.active_google_accounts;
       
       const usedStr = formatBytes(s.pool_used_bytes);
       const totalStr = formatBytes(s.pool_total_bytes);
-      document.getElementById('stat-storage-used').textContent = usedStr;
-      document.getElementById('stat-storage-total').textContent = `of ${totalStr} pool capacity`;
+      const usedEl = document.getElementById('stat-storage-used');
+      const totalEl = document.getElementById('stat-storage-total');
+      if (usedEl) usedEl.textContent = usedStr;
+      if (totalEl) totalEl.textContent = `of ${totalStr} pool capacity`;
 
-      document.getElementById('stat-files').textContent = s.total_files;
-      document.getElementById('stat-users').textContent = s.total_users;
+      const filesEl = document.getElementById('stat-files');
+      const usersEl = document.getElementById('stat-users');
+      if (filesEl) filesEl.textContent = s.total_files;
+      if (usersEl) usersEl.textContent = s.total_users;
     }
   } catch (err) {
-    console.error('Failed to load admin stats:', err);
+    if (!silent) console.error('Failed to load admin stats:', err);
   }
 }
 
-async function loadGoogleAccounts() {
+async function loadGoogleAccounts(silent = false) {
   const grid = document.getElementById('accounts-grid');
-  grid.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-xl mb-2"></i><p>Loading accounts...</p></div>`;
+  if (!grid) return;
+  if (!silent) {
+    grid.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-xl mb-2"></i><p>Loading accounts...</p></div>`;
+  }
 
   try {
     const res = await fetch('api/admin.php?action=accounts_list');
@@ -251,7 +274,13 @@ async function syncAccountQuota(id) {
 }
 
 async function deleteAccount(id) {
-  if (!confirm('Are you sure you want to disconnect this Google Account?')) return;
+  const ok = window.showInAppConfirm ? await window.showInAppConfirm({
+    title: 'Disconnect Google Account',
+    message: 'Are you sure you want to disconnect this Google Account?',
+    confirmText: 'Disconnect',
+    isDanger: true
+  }) : false;
+  if (!ok) return;
   const res = await fetch('api/admin.php?action=account_delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -259,9 +288,10 @@ async function deleteAccount(id) {
   });
   const data = await res.json();
   if (!data.success) {
-    alert(data.error);
+    if (window.showInAppToast) window.showInAppToast(data.error, 'error');
     return;
   }
+  if (window.showInAppToast) window.showInAppToast('Account disconnected successfully.', 'success');
   loadAdminStats();
   loadGoogleAccounts();
 }
@@ -303,12 +333,19 @@ async function loadGlobalFiles() {
 }
 
 async function adminDeleteFile(fileId) {
-  if (!confirm('Are you sure you want to delete this file permanently from Google Drive and database?')) return;
+  const ok = window.showInAppConfirm ? await window.showInAppConfirm({
+    title: 'Delete File Permanently',
+    message: 'Are you sure you want to delete this file permanently from Google Drive and database?',
+    confirmText: 'Delete Permanently',
+    isDanger: true
+  }) : false;
+  if (!ok) return;
   await fetch('api/files.php?action=delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'file', id: fileId }),
   });
+  if (window.showInAppToast) window.showInAppToast('File deleted permanently.', 'success');
   loadGlobalFiles();
   loadAdminStats();
 }

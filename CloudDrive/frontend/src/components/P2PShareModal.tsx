@@ -480,7 +480,7 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
       const sessionId = data.session_id;
       setCurrentSessionId(sessionId);
 
-      const url = `${window.location.origin}/?join=${sessionId}`;
+      const url = `${window.location.origin}/p2p/${sessionId}`;
       setJoinUrl(url);
 
       if (qrCanvasRef.current) {
@@ -501,9 +501,11 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
 
       // Buffer chunks in background for 100% reliable fallback (non-blocking)
       bufferChunksInBackground(sessionId, files);
+      return sessionId;
     } catch (err: unknown) {
       console.error('P2P Host error:', err);
       setIsBufferingStream(false);
+      return null;
     }
   };
 
@@ -592,7 +594,9 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
         receiverDcRef.current = dc;
         dc.binaryType = 'arraybuffer';
 
-        let currentFileChunks: BlobPart[] = [];
+        let currentFileBlobs: Blob[] = [];
+        let currentChunkBuffer: BlobPart[] = [];
+        let bufferBytes = 0;
         let currentFileInfo: any = null;
         let totalReceivedBytes = 0;
         let lastTime = performance.now();
@@ -604,11 +608,14 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
             try {
               const msg = JSON.parse(event.data);
               if (msg.type === 'file_start') {
-                currentFileChunks = [];
+                currentFileBlobs = [];
+                currentChunkBuffer = [];
+                bufferBytes = 0;
                 currentFileInfo = msg;
               } else if (msg.type === 'file_end') {
-                if (currentFileInfo && currentFileChunks.length > 0) {
-                  const blob = new Blob(currentFileChunks, { type: 'application/octet-stream' });
+                if (currentFileInfo && (currentFileBlobs.length > 0 || currentChunkBuffer.length > 0)) {
+                  if (currentChunkBuffer.length > 0) currentFileBlobs.push(new Blob(currentChunkBuffer));
+                  const blob = new Blob(currentFileBlobs, { type: currentFileInfo.type || 'application/octet-stream' });
                   const blobUrl = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = blobUrl;
@@ -616,8 +623,10 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
                   document.body.appendChild(a);
                   a.click();
                   document.body.removeChild(a);
-                  URL.revokeObjectURL(blobUrl);
-                  currentFileChunks = [];
+                  setTimeout(() => URL.revokeObjectURL(blobUrl), 90000);
+                  currentFileBlobs = [];
+                  currentChunkBuffer = [];
+                  bufferBytes = 0;
                 }
               } else if (msg.type === 'all_done') {
                 setIsDownloadDone(true);
@@ -627,8 +636,17 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
             } catch {}
           } else {
             const chunk = event.data;
-            currentFileChunks.push(chunk);
-            totalReceivedBytes += chunk.byteLength;
+            currentChunkBuffer.push(chunk);
+            const chunkLen = chunk.byteLength || 0;
+            bufferBytes += chunkLen;
+            totalReceivedBytes += chunkLen;
+
+            // Batch every 16MB into Blob to keep JS heap RAM free on files > 1GB
+            if (bufferBytes >= 16 * 1024 * 1024) {
+              currentFileBlobs.push(new Blob(currentChunkBuffer));
+              currentChunkBuffer = [];
+              bufferBytes = 0;
+            }
 
             const now = performance.now();
             const deltaSec = (now - lastTime) / 1000;
@@ -747,7 +765,9 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
       for (let fIdx = 0; fIdx < files.length; fIdx++) {
         if (isCancelledRef.current) break;
         const fileMeta = files[fIdx];
-        const chunks: Uint8Array[] = [];
+        const fileBlobs: Blob[] = [];
+        let chunkBuffer: Uint8Array[] = [];
+        let bufferBytes = 0;
         let fileReceivedBytes = 0;
         const expectedSize = fileMeta.size;
 
@@ -785,9 +805,17 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
             if (done) break;
 
             if (value) {
-              chunks.push(value);
+              chunkBuffer.push(value);
+              bufferBytes += value.length;
               fileReceivedBytes += value.length;
               totalReceivedBytes += value.length;
+
+              // Batch every 16MB into Blob to keep JS heap RAM bounded on files > 1GB
+              if (bufferBytes >= 16 * 1024 * 1024) {
+                fileBlobs.push(new Blob(chunkBuffer as unknown as BlobPart[]));
+                chunkBuffer = [];
+                bufferBytes = 0;
+              }
 
               const now = performance.now();
               const deltaSec = (now - lastTime) / 1000;
@@ -818,8 +846,9 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
         }
 
         // Trigger individual file save
-        if (chunks.length > 0 && !isCancelledRef.current) {
-          const mergedBlob = new Blob(chunks as unknown as BlobPart[], {
+        if (!isCancelledRef.current && (fileBlobs.length > 0 || chunkBuffer.length > 0)) {
+          if (chunkBuffer.length > 0) fileBlobs.push(new Blob(chunkBuffer as unknown as BlobPart[]));
+          const mergedBlob = new Blob(fileBlobs, {
             type: fileMeta.type || 'application/octet-stream',
           });
           const blobUrl = URL.createObjectURL(mergedBlob);
@@ -829,7 +858,7 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 90000);
         }
       }
 
@@ -1145,20 +1174,55 @@ export const P2PShareModal: React.FC<P2PShareModalProps> = ({ isOpen, onClose })
                             <div
                               key={p.peer_id}
                               onClick={async () => {
-                                if (currentSessionId) {
-                                  await fetch('/api/p2p.php?action=send_offer', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      sender_peer: peerId,
-                                      sender_name: deviceName,
-                                      target_peer: p.peer_id,
-                                      session_id: currentSessionId,
-                                      files: selectedFiles.map((f, i) => ({ index: i, name: f.name, size: f.size })),
-                                      total_size: selectedFiles.reduce((acc, f) => acc + f.size, 0),
-                                    }),
-                                  });
-                                  alert(`Transfer request sent to ${p.device_name}!`);
+                                if (selectedFiles.length === 0) {
+                                  alert(`Please select files first, then tap ${p.device_name}`);
+                                  return;
+                                }
+                                let sId = currentSessionId;
+                                if (!sId) {
+                                  sId = await initiateHosting(selectedFiles);
+                                }
+                                if (sId) {
+                                  try {
+                                    const res = await fetch('/api/p2p.php?action=send_offer', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        sender_peer: peerId,
+                                        sender_name: deviceName,
+                                        target_peer: p.peer_id,
+                                        session_id: sId,
+                                        files: selectedFiles.map((f, i) => ({ index: i, name: f.name, size: f.size })),
+                                        total_size: selectedFiles.reduce((acc, f) => acc + f.size, 0),
+                                      }),
+                                    });
+                                    const d = await res.json();
+                                    if (d.success && d.offer_id) {
+                                      alert(`Transfer request sent to ${p.device_name}! Waiting for acceptance...`);
+                                      let pollCount = 0;
+                                      const timer = setInterval(async () => {
+                                        pollCount++;
+                                        if (pollCount > 60) {
+                                          clearInterval(timer);
+                                          return;
+                                        }
+                                        try {
+                                          const cRes = await fetch(`/api/p2p.php?action=check_offer_status&offer_id=${encodeURIComponent(d.offer_id)}`);
+                                          const cData = await cRes.json();
+                                          if (cData.success && cData.status === 'accepted') {
+                                            clearInterval(timer);
+                                            alert(`✅ ${p.device_name} accepted your transfer! Starting beam...`);
+                                            listenForWebRTCSender(sId, selectedFiles);
+                                          } else if (cData.success && cData.status === 'declined') {
+                                            clearInterval(timer);
+                                            alert(`❌ ${p.device_name} declined the transfer request.`);
+                                          }
+                                        } catch {}
+                                      }, 1000);
+                                    }
+                                  } catch (err: unknown) {
+                                    alert('Failed to send transfer request: ' + (err as Error).message);
+                                  }
                                 }
                               }}
                               className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-emerald-500 hover:bg-emerald-50/40 transition cursor-pointer flex items-center justify-between group"

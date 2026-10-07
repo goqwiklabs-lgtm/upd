@@ -18,9 +18,9 @@ trackLiveVisitor($pdo, 'Home Explorer');
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Custom UI Styles -->
-  <link rel="stylesheet" href="assets/css/style.css">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <!-- Custom UI Styles via jsDelivr CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/goqwiklabs-lgtm/upd@main/CloudDrive/assets/css/style.css">
+  <link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/goqwiklabs-lgtm/upd@main/CloudDrive/favicon.svg">
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col selection:bg-blue-600 selection:text-white">
 
@@ -947,11 +947,11 @@ trackLiveVisitor($pdo, 'Home Explorer');
   <!-- FLOATING TOAST NOTIFICATION CONTAINER (Replaces window.alert) -->
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none max-w-sm w-full px-4"></div>
 
-  <!-- QR Code Renderer Library -->
-  <script src="assets/js/qrcode.min.js"></script>
-  <!-- Application & P2P Logic -->
-  <script src="assets/js/app.js"></script>
-  <script src="assets/js/p2p.js"></script>
+  <!-- QR Code Renderer Library via jsDelivr CDN -->
+  <script src="https://cdn.jsdelivr.net/gh/goqwiklabs-lgtm/upd@main/CloudDrive/assets/js/qrcode.min.js"></script>
+  <!-- Application & P2P Logic via jsDelivr CDN -->
+  <script src="https://cdn.jsdelivr.net/gh/goqwiklabs-lgtm/upd@main/CloudDrive/assets/js/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/goqwiklabs-lgtm/upd@main/CloudDrive/assets/js/p2p.js"></script>
   <script>
     // Live visitor heartbeat ping
     setInterval(() => {
